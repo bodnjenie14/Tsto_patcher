@@ -689,7 +689,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
         # Edit the binary file
         old_urls = [
-            "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
+            "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
             "https://syn-dir.sn.eamobile.com",
         ]
         new_urls = [new_dlc_url, new_server_url]
@@ -711,8 +711,9 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
                 new_url = new_url[:old_length]  # Cut off excess characters
 
             # Encode and replace
-            old_url_bytes = old_url.encode("utf-8")
-            new_url_bytes = new_url.encode("utf-8")
+            old_url_bytes = old_url.encode()
+            new_url_bytes = new_url.encode()
+
             content = content.replace(old_url_bytes, new_url_bytes)
 
         # Save edited binary
