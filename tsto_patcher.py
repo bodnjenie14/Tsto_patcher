@@ -689,7 +689,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
         # Edit the binary file
         old_urls = [
-            "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
+            "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
             "https://syn-dir.sn.eamobile.com",
         ]
         new_urls = [new_dlc_url, new_server_url]
