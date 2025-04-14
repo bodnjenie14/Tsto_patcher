@@ -536,6 +536,10 @@ def run_apk_script(apk_file, gameserver_url, dlcserver_url):
     if not dlcserver_url.endswith("/"):
         dlcserver_url += "/"
 
+    # Avoids .dlc in middle of url.
+    if len(dlcserver_url) % 2 == 0:
+        dlcserver_url += "/"
+
     # Check all inputs
     if not apk_file or not gameserver_url or not dlcserver_url:
         messagebox.showerror("Error", "All fields are required!")
@@ -545,7 +549,7 @@ def run_apk_script(apk_file, gameserver_url, dlcserver_url):
     try:
         process_apk(apk_file, gameserver_url, dlcserver_url)
     except Exception as e:
-        messagebox.showerror("Error", "Am unexpected error has occurec: " + str(e))
+        messagebox.showerror("Error", "An unexpected error has occured: " + str(e))
 
 
 #############################IPA PATCHER
@@ -619,6 +623,15 @@ def start_ipa_patcher():
 
 
 def run_ipa_script(ipa_file, server_url, dlc_url):
+
+    # Add a / to the end of the DLC URL
+    if not dlc_url.endswith("/"):
+        dlc_url += "/"
+
+    # Avoids .dlc in middle of url.
+    if len(dlc_url) % 2 == 0:
+        dlc_url += "/"
+
     extracted_folder = "tsto_ipa_extracted"
     updated_ipa = "tsto-patched.ipa"
 
