@@ -5,12 +5,8 @@ from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 import sys
 import shutil
-import hashlib
-import urllib.parse
 import zipfile
 import plistlib
-
-import platform
 
 # pip install request
 import requests
@@ -390,7 +386,11 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     if leftover > 0:
         # Add as many './' pairs as will fit
         pairs_to_add = leftover // 2
-        new_url_bytes.extend(b"./" * pairs_to_add)
+        new_url_bytes.extend(b'./' * pairs_to_add)
+
+        # If there's one leftover byte, add a single slash
+        if leftover % 2 == 1:
+            new_url_bytes.append(ord('/'))
 
     # 5) Overwrite the original string in the file
     for i in range(original_len):
@@ -536,20 +536,6 @@ def run_apk_script(apk_file, gameserver_url, dlc_url):
     if not dlc_url.endswith("/"):
         dlc_url += "/"
 
-    # Find port and decide between . or ..
-    dlc_url_split = dlc_url.rsplit(":", maxsplit=1)
-    base = dlc_url_split[0]
-
-    dlc_url_split = dlc_url_split[1].split("/", maxsplit=1)
-    port = dlc_url_split[0]
-    endpoint = dlc_url_split[1]
-
-    # Avoids .dlc in middle of url.
-    if len(dlc_url) % 2 > 0:
-        dlc_url = base + ":" + port + "/./" + endpoint
-    else:
-        dlc_url = base + ":" + port + "/../" + endpoint
-
     # Check all inputs
     if not apk_file or not gameserver_url or not dlc_url:
         messagebox.showerror("Error", "All fields are required!")
@@ -638,21 +624,6 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
     if not dlc_url.endswith("/"):
         dlc_url += "/"
 
-
-    # Find port and decide between . or ..
-    dlc_url_split = dlc_url.rsplit(":", maxsplit=1)
-    base = dlc_url_split[0]
-
-    dlc_url_split = dlc_url_split[1].split("/", maxsplit=1)
-    port = dlc_url_split[0]
-    endpoint = dlc_url_split[1]
-
-    # Avoids .dlc in middle of url.
-    if len(dlc_url) % 2 > 0:
-        dlc_url = base + ":" + port + "/./" + endpoint
-    else:
-        dlc_url = base + ":" + port + "/../" + endpoint
-
     extracted_folder = "tsto_ipa_extracted"
     updated_ipa = "tsto-patched.ipa"
 
@@ -669,6 +640,16 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
     binary_path = os.path.join(app_folder, "Tapped Out")
 
     try:
+        # Include ios fix into Info.plist to force the game to use http only.
+        # Credits to @Rudeboy for finding this fix!
+        iosfix = "<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>"
+        with open(plist_path, "r") as f:
+            contents = f.readlines()
+
+        contents.insert(4, iosfix)
+        with open(plist_path, "w") as f:
+            f.writelines(contents)
+
         # Read + update Info.plist
         with open(plist_path, "rb") as plist_file:
             plist_data = plistlib.load(plist_file)
@@ -702,7 +683,11 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
             if leftover > 0:
                 pairs_to_add = leftover // 2  # Each `./` takes 2 bytes
-                new_dlc_url += "./" * pairs_to_add
+                new_dlc_url += './' * pairs_to_add
+
+                # If there's one leftover byte, add a single `/`
+                if leftover % 2 == 1:
+                    new_dlc_url += '/'
 
             # Now, store the correctly padded DLC URL
             plist_data["DLCLocation"] = new_dlc_url
