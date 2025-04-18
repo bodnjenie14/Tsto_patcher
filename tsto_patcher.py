@@ -2,6 +2,7 @@ import os
 import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from pathlib import Path
 import sys
 import shutil
 import hashlib
@@ -391,10 +392,6 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
         pairs_to_add = leftover // 2
         new_url_bytes.extend(b"./" * pairs_to_add)
 
-        # If there's one leftover byte, add a single slash
-        if leftover % 2 == 1:
-            new_url_bytes.append(ord("/"))
-
     # 5) Overwrite the original string in the file
     for i in range(original_len):
         file_bytes[offset + i] = new_url_bytes[i]
@@ -526,28 +523,41 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url):
 
 
 def browse_apk_file():
-    file_path = filedialog.askopenfilename(filetypes=[("APK files", "*.apk")])
+    initialdir = Path.cwd()
+    if Path("Original Files").exists() is True:
+        initialdir = Path("Original Files")
+    file_path = filedialog.askopenfilename(initialdir=initialdir, filetypes=[("APK files", "*.apk")])
     apk_entry.delete(0, tk.END)
     apk_entry.insert(0, file_path)
 
 
-def run_apk_script(apk_file, gameserver_url, dlcserver_url):
+def run_apk_script(apk_file, gameserver_url, dlc_url):
     # Add a / to the end of the DLC URL
-    if not dlcserver_url.endswith("/"):
-        dlcserver_url += "/"
+    if not dlc_url.endswith("/"):
+        dlc_url += "/"
+
+    # Find port and decide between . or ..
+    dlc_url_split = dlc_url.rsplit(":", maxsplit=1)
+    base = dlc_url_split[0]
+
+    dlc_url_split = dlc_url_split[1].split("/", maxsplit=1)
+    port = dlc_url_split[0]
+    endpoint = dlc_url_split[1]
 
     # Avoids .dlc in middle of url.
-    if len(dlcserver_url) % 2 == 0:
-        dlcserver_url += "/"
+    if len(dlc_url) % 2 > 0:
+        dlc_url = base + ":" + port + "/./" + endpoint
+    else:
+        dlc_url = base + ":" + port + "/../" + endpoint
 
     # Check all inputs
-    if not apk_file or not gameserver_url or not dlcserver_url:
+    if not apk_file or not gameserver_url or not dlc_url:
         messagebox.showerror("Error", "All fields are required!")
         return
 
     # Run the process
     try:
-        process_apk(apk_file, gameserver_url, dlcserver_url)
+        process_apk(apk_file, gameserver_url, dlc_url)
     except Exception as e:
         messagebox.showerror("Error", "An unexpected error has occured: " + str(e))
 
@@ -628,9 +638,20 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
     if not dlc_url.endswith("/"):
         dlc_url += "/"
 
+
+    # Find port and decide between . or ..
+    dlc_url_split = dlc_url.rsplit(":", maxsplit=1)
+    base = dlc_url_split[0]
+
+    dlc_url_split = dlc_url_split[1].split("/", maxsplit=1)
+    port = dlc_url_split[0]
+    endpoint = dlc_url_split[1]
+
     # Avoids .dlc in middle of url.
-    if len(dlc_url) % 2 == 0:
-        dlc_url += "/"
+    if len(dlc_url) % 2 > 0:
+        dlc_url = base + ":" + port + "/./" + endpoint
+    else:
+        dlc_url = base + ":" + port + "/../" + endpoint
 
     extracted_folder = "tsto_ipa_extracted"
     updated_ipa = "tsto-patched.ipa"
@@ -682,10 +703,6 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
             if leftover > 0:
                 pairs_to_add = leftover // 2  # Each `./` takes 2 bytes
                 new_dlc_url += "./" * pairs_to_add
-
-                # If there's one leftover byte, add a single `/`
-                if leftover % 2 == 1:
-                    new_dlc_url += "/"
 
             # Now, store the correctly padded DLC URL
             plist_data["DLCLocation"] = new_dlc_url
@@ -758,7 +775,10 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
 
 def browse_ipa_file():
-    file_path = filedialog.askopenfilename(filetypes=[("IPA files", "*.ipa")])
+    initialdir = Path.cwd()
+    if Path("Original Files").exists() is True:
+        initialdir = Path("Original Files")
+    file_path = filedialog.askopenfilename(initialdir=initialdir, filetypes=[("IPA files", "*.ipa")])
     ipa_entry.delete(0, tk.END)
     ipa_entry.insert(0, file_path)
 
@@ -853,7 +873,24 @@ def add_placeholder(entry, placeholder):
 
 ###############STARTUP
 
+tappedout = Path("tappedout")
+venv = Path("venv")
+ipa = Path("tsto_ipa_extracted")
+# Delete previous directories
+if tappedout.exists() is True:
+    shutil.rmtree(tappedout)
+if venv.exists() is True:
+    shutil.rmtree(venv)
+
 start_selection()
+
+# Delete previous directories
+if tappedout.exists() is True:
+    shutil.rmtree(tappedout)
+if venv.exists() is True:
+    shutil.rmtree(venv)
+if ipa.exists() is True:
+    shutil.rmtree(ipa)
 
 # coded by @bodnjenie
 # credit to @tjac for patching logic
