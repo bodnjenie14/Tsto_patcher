@@ -640,19 +640,17 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
     binary_path = os.path.join(app_folder, "Tapped Out")
 
     try:
-        # Include ios fix into Info.plist to force the game to use http only.
-        # Credits to @Rudeboy for finding this fix!
-        iosfix = "<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>"
-        with open(plist_path, "r") as f:
-            contents = f.readlines()
-
-        contents.insert(4, iosfix)
-        with open(plist_path, "w") as f:
-            f.writelines(contents)
 
         # Read + update Info.plist
         with open(plist_path, "rb") as plist_file:
             plist_data = plistlib.load(plist_file)
+
+        # Include ios fix into Info.plist to force the game to use http only.
+        # Credits to @Rudeboy and @BodNJenie for finding this fix!
+        # Add NSAppTransportSecurity settings at the top level
+        plist_data["NSAppTransportSecurity"] = {
+            "NSAllowsArbitraryLoads": True
+        }
 
         new_server_url = ""
         if "MayhemServerURL" in plist_data:
@@ -671,7 +669,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
         if "DLCLocation" in plist_data:
             new_dlc_url = dlc_url
 
-            old_dlc_url = "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/"
+            old_dlc_url = "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/"
             old_length = len(old_dlc_url)
             new_length = len(new_dlc_url)
 
