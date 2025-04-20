@@ -141,6 +141,7 @@ def start_apk_patcher():
     footer_label.pack(side="right", padx=10, pady=5)
 
 
+
 def download_file(url, dest):
     """Download a file from the specified URL to the destination path."""
     try:
@@ -299,7 +300,8 @@ def replace_and_log_urls(
     """
     replacements = {
         "https://prod.simpsons-ea.com": new_gameserver_url,
-        "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver
+        "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver.
+        "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url, # Update dlc server url.
     }
 
     log = []  # Store logs of replacements
@@ -532,6 +534,19 @@ def browse_apk_file():
 
 
 def run_apk_script(apk_file, gameserver_url, dlc_url):
+
+    # Delete previous directories.
+    tappedout = Path("tappedout")
+    venv = Path("venv")
+    if tappedout.exists() is True:
+        shutil.rmtree(tappedout)
+    if venv.exists() is True:
+        shutil.rmtree(venv)
+
+    # Remove a / at the end of the gameserver URL
+    if gameserver_url.endswith("/"):
+        gameserver_url = gameserver_url[:-1]
+
     # Add a / to the end of the DLC URL
     if not dlc_url.endswith("/"):
         dlc_url += "/"
@@ -619,6 +634,14 @@ def start_ipa_patcher():
 
 
 def run_ipa_script(ipa_file, server_url, dlc_url):
+    # Remove ipa folder.
+    ipa = Path("tsto_ipa_extracted")
+    if ipa.exists() is True:
+        shutil.rmtree(ipa)
+
+    # Remove a / at the end of the server URL.
+    if server_url.endswith("/"):
+        server_url = server_url[:-1]
 
     # Add a / to the end of the DLC URL
     if not dlc_url.endswith("/"):
@@ -856,18 +879,12 @@ def add_placeholder(entry, placeholder):
 
 ###############STARTUP
 
-tappedout = Path("tappedout")
-venv = Path("venv")
-ipa = Path("tsto_ipa_extracted")
-# Delete previous directories
-if tappedout.exists() is True:
-    shutil.rmtree(tappedout)
-if venv.exists() is True:
-    shutil.rmtree(venv)
-
 start_selection()
 
 # Delete previous directories
+tappedout = Path("tappedout")
+venv = Path("venv")
+ipa = Path("tsto_ipa_extracted")
 if tappedout.exists() is True:
     shutil.rmtree(tappedout)
 if venv.exists() is True:
