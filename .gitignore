@@ -1,0 +1,4 @@
+android-sdk/
+platform-tools/
+*.jar
+*.*~
