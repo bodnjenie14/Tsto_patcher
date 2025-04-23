@@ -1,4 +1,7 @@
+Payload/
 android-sdk/
 platform-tools/
+*.apk
+*.ipa
 *.jar
 *.*~

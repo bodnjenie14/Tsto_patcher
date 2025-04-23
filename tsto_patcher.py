@@ -690,7 +690,12 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
         new_dlc_url = ""
         if "DLCLocation" in plist_data:
+
+            # Store the the DLC URL.
+            plist_data["DLCLocation"] = dlc_url
+
             new_dlc_url = dlc_url
+
 
             old_dlc_url = "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/"
             old_length = len(old_dlc_url)
@@ -709,9 +714,6 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
                 # If there's one leftover byte, add a single `/`
                 if leftover % 2 == 1:
                     new_dlc_url += '/'
-
-            # Now, store the correctly padded DLC URL
-            plist_data["DLCLocation"] = new_dlc_url
         else:
             print("Key 'DLCLocation' not found.")
 
@@ -721,7 +723,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
         print(f"Updated {plist_path} successfully.")
         print(f"New MayhemServerURL: {new_server_url}")
-        print(f"New DLCLocation: {new_dlc_url}")
+        print(f"New DLCLocation: {dlc_url}")
 
         # Edit the binary file
         old_urls = [
