@@ -345,9 +345,9 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     """
     Replace the known DLC URL string in the .so file with 'new_url',
     **forcing** it to end with '/static/' and keeping the exact same byte-length
-    as the original string.
+    as the original string. DLC URL is always expanded with a default port number if one is not specified.
 
-    - If the new URL is shorter, fill leftover space with './' pairs (and a '/' if there's one leftover byte).
+    - If the new URL is shorter, append leading zeros to port number.
     - If it's longer, either truncate it or raise an error (see the code comment).
     """
 
@@ -356,7 +356,7 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     offset = file_bytes.find(original_bytes)
     if offset < 0:
         print("[!] Could not find the DLC URL in this file. Skipping patch.")
-        return None
+        return file_bytes
 
     # The original URL length (often 88 bytes)
     original_len = len(original_bytes)
@@ -365,7 +365,7 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     #    - Strip any trailing slash, then add '/static/'
     #    - e.g. "http://example.com" => "http://example.com/static/"
     #    - e.g. "http://example.com/" => "http://example.com/static/"
-    new_url = new_url
+    new_url = expand_url(new_url, original_len)
 
     print("NEW URL: " + new_url)
     # 2) Convert to bytes
@@ -382,17 +382,6 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
         #     f"New URL is {new_len - original_len} bytes too long "
         #     f"(max {original_len}). Try a shorter URL."
         # )
-
-    # 4) If new URL is shorter, fill leftover space with './'
-    leftover = original_len - len(new_url_bytes)
-    if leftover > 0:
-        # Add as many './' pairs as will fit
-        pairs_to_add = leftover // 2
-        new_url_bytes.extend(b'./' * pairs_to_add)
-
-        # If there's one leftover byte, add a single slash
-        if leftover % 2 == 1:
-            new_url_bytes.append(ord('/'))
 
     # 5) Overwrite the original string in the file
     for i in range(original_len):
@@ -704,16 +693,8 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
             if new_length > old_length:
                 raise ValueError("New DLCLocation URL is too long. Keep it short.")
 
-            # If shorter, fill leftover space with `./` pairs (like `patch_url` does)
-            leftover = old_length - new_length
+            new_dlc_url = expand_url(new_dlc_url, old_length)
 
-            if leftover > 0:
-                pairs_to_add = leftover // 2  # Each `./` takes 2 bytes
-                new_dlc_url += './' * pairs_to_add
-
-                # If there's one leftover byte, add a single `/`
-                if leftover % 2 == 1:
-                    new_dlc_url += '/'
         else:
             print("Key 'DLCLocation' not found.")
 
@@ -740,13 +721,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
             old_length = len(old_url)
             new_length = len(new_url)
 
-            # If new URL is shorter, pad with `/` until it reaches exact length
-            if new_length < old_length:
-                new_url = new_url.ljust(old_length, "/")
-
-            # If new URL is longer, truncate it to match the exact length
-            elif new_length > old_length:
-                new_url = new_url[:old_length]  # Cut off excess characters
+            new_url = expand_url(new_url, old_length)
 
             # Encode and replace
             old_url_bytes = old_url.encode()
@@ -878,6 +853,44 @@ def add_placeholder(entry, placeholder):
     entry.bind("<FocusIn>", on_focus_in)
     entry.bind("<FocusOut>", on_focus_out)
 
+
+def expand_url(url, new_length):
+
+    # If length is less than current length, return current url unchanged.
+    url_diff = new_length - len(url)
+    if url_diff < 0:
+        return url
+
+    default_ports = {"http": "80", "https": "443"}
+
+    # Split between protocol and url.
+    protocol_split = url.split("://", maxsplit=1)
+
+    # If current protocol does not exist, return current url unchanged.
+    if protocol_split[0] not in default_ports:
+        return url
+
+    # Split url between domain:port and location.
+    url_split = protocol_split[1].split("/", maxsplit=1)
+
+    # Get location if any exists.
+    location = ""
+    if len(url_split) == 2:
+        location = "/" + url_split[1]
+
+    # Split domain:port.
+    base_split = url_split[0].split(":", maxsplit=1)
+
+    # Grab existing port if there's one or fall back to default ports.
+    if len(base_split) == 2:
+        port = base_split[1]
+    else:
+        port = default_ports[protocol_split[0]]
+        url_diff -= len(port) + 1 # Discount the : and port characters that were not included in the original url.
+
+    # Build new url.
+    new_url = protocol_split[0] + "://" + base_split[0] + ":" + "0" * url_diff + port + location
+    return new_url
 
 ###############STARTUP
 
