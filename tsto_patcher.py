@@ -141,7 +141,6 @@ def start_apk_patcher():
     footer_label.pack(side="right", padx=10, pady=5)
 
 
-
 def download_file(url, dest):
     """Download a file from the specified URL to the destination path."""
     try:
@@ -301,7 +300,9 @@ def replace_and_log_urls(
     replacements = {
         "https://prod.simpsons-ea.com": new_gameserver_url,
         "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver.
-        "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url, # Update dlc server url.
+        "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
+        "https://ping1.tnt-ea.com": "localhost",
+        "https://www.google.com": "localhost",
     }
 
     log = []  # Store logs of replacements
@@ -517,13 +518,14 @@ def browse_apk_file():
     initialdir = Path.cwd()
     if Path("Original Files").exists() is True:
         initialdir = Path("Original Files")
-    file_path = filedialog.askopenfilename(initialdir=initialdir, filetypes=[("APK files", "*.apk")])
+    file_path = filedialog.askopenfilename(
+        initialdir=initialdir, filetypes=[("APK files", "*.apk")]
+    )
     apk_entry.delete(0, tk.END)
     apk_entry.insert(0, file_path)
 
 
 def run_apk_script(apk_file, gameserver_url, dlc_url):
-
     # Delete previous directories.
     tappedout = Path("tappedout")
     venv = Path("venv")
@@ -652,7 +654,6 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
     binary_path = os.path.join(app_folder, "Tapped Out")
 
     try:
-
         # Read + update Info.plist
         with open(plist_path, "rb") as plist_file:
             plist_data = plistlib.load(plist_file)
@@ -660,9 +661,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
         # Include ios fix into Info.plist to force the game to use http only.
         # Credits to @Rudeboy and @BodNJenie for finding this fix!
         # Add NSAppTransportSecurity settings at the top level
-        plist_data["NSAppTransportSecurity"] = {
-            "NSAllowsArbitraryLoads": True
-        }
+        plist_data["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
 
         new_server_url = ""
         if "MayhemServerURL" in plist_data:
@@ -679,12 +678,10 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
 
         new_dlc_url = ""
         if "DLCLocation" in plist_data:
-
             # Store the the DLC URL.
             plist_data["DLCLocation"] = dlc_url
 
             new_dlc_url = dlc_url
-
 
             old_dlc_url = "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/"
             old_length = len(old_dlc_url)
@@ -710,8 +707,10 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
         old_urls = [
             "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
             "https://syn-dir.sn.eamobile.com",
+            "https://www.google.com",
+            "https://ping1.tnt-ea.com",
         ]
-        new_urls = [new_dlc_url, new_server_url]
+        new_urls = [new_dlc_url, new_server_url, "http://localhost", "http://localhost"]
 
         with open(binary_path, "rb") as file:
             content = bytearray(file.read())
@@ -761,7 +760,9 @@ def browse_ipa_file():
     initialdir = Path.cwd()
     if Path("Original Files").exists() is True:
         initialdir = Path("Original Files")
-    file_path = filedialog.askopenfilename(initialdir=initialdir, filetypes=[("IPA files", "*.ipa")])
+    file_path = filedialog.askopenfilename(
+        initialdir=initialdir, filetypes=[("IPA files", "*.ipa")]
+    )
     ipa_entry.delete(0, tk.END)
     ipa_entry.insert(0, file_path)
 
@@ -791,7 +792,7 @@ def show_credits():
 
     credits_label = tk.Label(
         credits_frame,
-        text="@BodNJenie\n" "@tjac\n" "@AlekPM",
+        text="@BodNJenie\n@tjac\n@AlekPM",
         bg="#2e2e2e",
         fg="#ffffff",
         font=("Arial", 12),
@@ -815,7 +816,7 @@ def show_credits():
 
     testers_label = tk.Label(
         testers_frame,
-        text="@rudeboy\n" "@jjay121212\n" "@Popo\n" "@avariss\n" "@jani",
+        text="@rudeboy\n@jjay121212\n@Popo\n@avariss\n@jani",
         bg="#2e2e2e",
         fg="#ffffff",
         font=("Arial", 12),
@@ -855,7 +856,6 @@ def add_placeholder(entry, placeholder):
 
 
 def expand_url(url, new_length):
-
     # If length is less than current length, return current url unchanged.
     url_diff = new_length - len(url)
     if url_diff < 0:
@@ -886,11 +886,22 @@ def expand_url(url, new_length):
         port = base_split[1]
     else:
         port = default_ports[protocol_split[0]]
-        url_diff -= len(port) + 1 # Discount the : and port characters that were not included in the original url.
+        url_diff -= (
+            len(port) + 1
+        )  # Discount the : and port characters that were not included in the original url.
 
     # Build new url.
-    new_url = protocol_split[0] + "://" + base_split[0] + ":" + "0" * url_diff + port + location
+    new_url = (
+        protocol_split[0]
+        + "://"
+        + base_split[0]
+        + ":"
+        + "0" * url_diff
+        + port
+        + location
+    )
     return new_url
+
 
 ###############STARTUP
 
