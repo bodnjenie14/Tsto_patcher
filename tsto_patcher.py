@@ -301,8 +301,8 @@ def replace_and_log_urls(
         "https://prod.simpsons-ea.com": new_gameserver_url,
         "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver.
         "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
-        "https://ping1.tnt-ea.com": "localhost",
-        "https://www.google.com": "localhost",
+        "https://ping1.tnt-ea.com": new_gameserver_url,
+        "https://www.google.com": new_gameserver_url,
     }
 
     log = []  # Store logs of replacements
@@ -710,7 +710,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url):
             "https://www.google.com",
             "https://ping1.tnt-ea.com",
         ]
-        new_urls = [new_dlc_url, new_server_url, "http://localhost", "http://localhost"]
+        new_urls = [new_dlc_url, new_server_url, new_server_url, new_server_url]
 
         with open(binary_path, "rb") as file:
             content = bytearray(file.read())
