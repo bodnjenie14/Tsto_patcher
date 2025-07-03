@@ -231,7 +231,7 @@ def start_apk_patcher():
     back_button.pack(side="left", padx=10, pady=5)
 
     footer_label = tk.Label(
-        footer_frame, text="Bodnjenie™", bg="#2e2e2e", fg="#ffffff", anchor="e"
+        footer_frame, text="Bodnjenie™ & Dractiums", bg="#2e2e2e", fg="#ffffff", anchor="e"
     )
     footer_label.pack(side="right", padx=10, pady=5)
 
@@ -310,6 +310,6 @@ def start_ipa_patcher():
     back_button.pack(side="left", padx=10, pady=5)
 
     footer_label = tk.Label(
-        footer_frame, text="Bodnjenie™", bg="#2e2e2e", fg="#ffffff", anchor="e"
+        footer_frame, text="Bodnjenie™ & Dractiums", bg="#2e2e2e", fg="#ffffff", anchor="e"
     )
     footer_label.pack(side="right", padx=10, pady=5)
