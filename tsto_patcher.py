@@ -17,6 +17,6 @@ if venv.exists() is True:
 if ipa.exists() is True:
     shutil.rmtree(ipa)
 
-# coded by @bodnjenie
+# coded by @bodnjenie and @dractiums
 # credit to @tjac for patching logic
 # credit to @alekpm for ipa logic

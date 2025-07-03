@@ -2,10 +2,13 @@ import os
 import sys
 import shutil
 import subprocess
+import time
 import requests
 from pathlib import Path
 from tkinter import  messagebox
 from modules.misc import expand_url
+
+CURRENT_EPOCH_TIME = time.time()
 
 def check_dependencies():
     """Check if all required dependencies are installed."""
@@ -154,7 +157,7 @@ def decompile_app(input_filename):
     )
 
 def replace_and_log_urls(
-    new_gameserver_url, new_dlcserver_url, new_url, buffer_size, string_size
+    new_gameserver_url, new_dlcserver_url, new_appname
 ):
     """
     Replace server URLs in the decompiled APK and log only the replacements.
@@ -162,12 +165,17 @@ def replace_and_log_urls(
     This primarily modifies text-based files (.smali, .xml, .txt).
     It does NOT handle binary .so patching.
     """
+
     replacements = {
         "https://prod.simpsons-ea.com": new_gameserver_url,
         "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver.
         "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
         "https://ping1.tnt-ea.com": "localhost",
         "https://www.google.com": "localhost",
+        "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(" ", "_")}_r{int(CURRENT_EPOCH_TIME)}",
+        "com/ea/game/simpsons4_row": f"com/ea/game/simpsons4_row/{new_appname.replace(" ", "_")}_r{int(CURRENT_EPOCH_TIME)}",
+        "Tapped Out</string>": new_appname + "</string>",
+        "Springfield</string>": new_appname + "</string>",
     }
 
     log = []  # Store logs of replacements
@@ -327,21 +335,31 @@ def perform_binary_patching(decompiled_path, new_dlcserver_url):
             print(f"[ERROR] Could not patch {file_path}: {e}")
 
 
-def recompile_app(input_filename):
+def recompile_app(input_filename, new_appname):
     """Recompile the patched APK."""
+
+    # Produce unique apk.
+    base_package_path = Path("tappedout", "smali", "com", "ea", "game", "simpsons4_row")
+    files = list(base_package_path.iterdir())
+    target = Path(base_package_path, new_appname.replace(" ", "_") + "_r" + str(int(CURRENT_EPOCH_TIME)))
+    target.mkdir()
+
+    for file in files:
+        os.rename(file, Path(target, file.name))
+
     buildapp_path = (
         "venv\\Scripts\\buildapp" if sys.platform == "win32" else "venv/bin/buildapp"
     )
     output_filename = (
-        f"{os.path.splitext(os.path.basename(input_filename))[0]}-patched.apk"
+        f"{new_appname.replace(" ", "_")}.apk"
     )
     subprocess.run(
-        [buildapp_path, "-d", "tappedout", "-o", output_filename], check=True
+        [buildapp_path, "-d", "tappedout", "-o", output_filename],
     )
     return output_filename
 
 
-def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, progress_bar):
+def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appname, progress_bar):
     try:
         progress_bar.start()
 
@@ -358,18 +376,15 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, progress_
         decompile_app(input_filename)
 
         # 3) Replace text-based references (gameserver, director, etc.):
-        new_url = new_dlcserver_url
-        buffer_size = hex(len(new_url) + 1)
-        string_size = hex(len(new_url))
         replace_and_log_urls(
-            new_gameserver_url, new_dlcserver_url, new_url, buffer_size, string_size
+            new_gameserver_url, new_dlcserver_url, new_appname
         )
 
         # 4) Perform direct binary patching on .so files for the DLC URL
         perform_binary_patching("./tappedout", new_dlcserver_url)
 
         # 5) Recompile the patched APK
-        output_filename = recompile_app(input_filename)
+        output_filename = recompile_app(input_filename, new_appname)
 
         messagebox.showinfo("Success", f"Patched APK created: {output_filename}")
     except FileNotFoundError as e:
@@ -379,7 +394,7 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, progress_
         progress_bar.stop()
 
 
-def run_apk_script(apk_file, gameserver_url, dlc_url, progress_bar):
+def run_apk_script(apk_file, gameserver_url, dlc_url, appname, progress_bar):
     # Delete previous directories.
     tappedout = Path("tappedout")
     venv = Path("venv")
@@ -387,6 +402,7 @@ def run_apk_script(apk_file, gameserver_url, dlc_url, progress_bar):
         shutil.rmtree(tappedout)
     if venv.exists() is True:
         shutil.rmtree(venv)
+
 
     # Remove a / at the end of the gameserver URL
     if gameserver_url.endswith("/"):
@@ -401,9 +417,13 @@ def run_apk_script(apk_file, gameserver_url, dlc_url, progress_bar):
         messagebox.showerror("Error", "All fields are required!")
         return
 
+    # Avoid empty app name.
+    if appname == "":
+        appname = "Tapped Out"
+    
     # Run the process
     try:
-        process_apk(apk_file, gameserver_url, dlc_url, progress_bar)
+        process_apk(apk_file, gameserver_url, dlc_url, appname, progress_bar)
     except Exception as e:
         messagebox.showerror("Error", "An unexpected error has occured: " + str(e))
 
