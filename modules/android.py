@@ -351,7 +351,7 @@ def recompile_app(input_filename, new_appname):
         "venv\\Scripts\\buildapp" if sys.platform == "win32" else "venv/bin/buildapp"
     )
     output_filename = (
-        f"{new_appname.replace(" ", "_")}.apk"
+        f"{new_appname.replace(' ', '_')}.apk"
     )
     subprocess.run(
         [buildapp_path, "-d", "tappedout", "-o", output_filename],
