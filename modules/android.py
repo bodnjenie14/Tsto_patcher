@@ -172,8 +172,8 @@ def replace_and_log_urls(
         "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
         "https://ping1.tnt-ea.com": "localhost",
         "https://www.google.com": "localhost",
-        "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(" ", "_")}_r{int(CURRENT_EPOCH_TIME)}",
-        "com/ea/game/simpsons4_row": f"com/ea/game/simpsons4_row/{new_appname.replace(" ", "_")}_r{int(CURRENT_EPOCH_TIME)}",
+        "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(' ', '_')}_r{int(CURRENT_EPOCH_TIME)}",
+        "com/ea/game/simpsons4_row": f"com/ea/game/simpsons4_row/{new_appname.replace(' ', '_')}_r{int(CURRENT_EPOCH_TIME)}",
         "Tapped Out</string>": new_appname + "</string>",
         "Springfield</string>": new_appname + "</string>",
     }
