@@ -107,7 +107,7 @@ def show_credits():
 
     credits_label = tk.Label(
         credits_frame,
-        text="@BodNJenie\n@tjac\n@AlekPM",
+        text="@BodNJenie\n@tjac\n@AlekPM\n@Dractiums",
         bg="#2e2e2e",
         fg="#ffffff",
         font=("Arial", 12),
@@ -197,22 +197,29 @@ def start_apk_patcher():
     dlcserver_entry.grid(row=2, column=1, columnspan=2, pady=5)
     add_placeholder(dlcserver_entry, "http://192.168.1.101:80")
 
+    appname_label = ttk.Label(frame, text="App Display Name:")
+    appname_label.grid(row=3, column=0, sticky="w")
+
+    appname_entry = ttk.Entry(frame, width=50)
+    appname_entry.grid(row=3, column=1, columnspan=2, pady=5)
+    add_placeholder(appname_entry, "Tapped Out")
+
     progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
-    progress_bar.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
+    progress_bar.grid(row=4, column=0, columnspan=3, pady=10, sticky="ew")
 
     run_button = ttk.Button(
         frame,
         text="Patch APK",
         command=lambda: run_apk_script(
-            apk_entry.get(), gameserver_entry.get(), dlcserver_entry.get(), progress_bar
+            apk_entry.get().strip(), gameserver_entry.get().strip(), dlcserver_entry.get().strip(), appname_entry.get().strip(), progress_bar
         ),
     )  # Changed to lambda to pass in variables
-    run_button.grid(row=4, column=0, columnspan=3, pady=5)
+    run_button.grid(row=5, column=0, columnspan=3, pady=5)
 
     check_button = ttk.Button(
         frame, text="Check Dependencies", command=check_dependencies
     )
-    check_button.grid(row=5, column=0, columnspan=3, pady=5)
+    check_button.grid(row=6, column=0, columnspan=3, pady=5)
 
     # Footer
     footer_frame = tk.Frame(root, bg="#2e2e2e")
