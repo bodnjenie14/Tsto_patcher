@@ -2,13 +2,10 @@ import os
 import sys
 import shutil
 import subprocess
-import time
 import requests
 from pathlib import Path
 from tkinter import  messagebox
 from modules.misc import expand_url
-
-CURRENT_EPOCH_TIME = time.time()
 
 def check_dependencies():
     """Check if all required dependencies are installed."""
@@ -157,12 +154,12 @@ def decompile_app(input_filename):
     )
 
 def replace_and_log_urls(
-    new_gameserver_url, new_dlcserver_url, new_appname
+    new_gameserver_url, new_dlcserver_url, new_appname, new_version
 ):
     """
     Replace server URLs in the decompiled APK and log only the replacements.
 
-    This primarily modifies text-based files (.smali, .xml, .txt).
+    This primarily modifies text-based files (.smali, .xml, .txt, .yml).
     It does NOT handle binary .so patching.
     """
 
@@ -172,10 +169,11 @@ def replace_and_log_urls(
         "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
         "https://ping1.tnt-ea.com": "localhost",
         "https://www.google.com": "localhost",
-        "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(' ', '_')}_r{int(CURRENT_EPOCH_TIME)}",
-        "com/ea/game/simpsons4_row": f"com/ea/game/simpsons4_row/{new_appname.replace(' ', '_')}_r{int(CURRENT_EPOCH_TIME)}",
+        "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(' ', '_')}",
+        "com/ea/game/simpsons4_row": f"com/ea/game/simpsons4_row/{new_appname.replace(' ', '_')}",
         "Tapped Out</string>": new_appname + "</string>",
         "Springfield</string>": new_appname + "</string>",
+        "4.69.5": new_version
     }
 
     log = []  # Store logs of replacements
@@ -185,7 +183,7 @@ def replace_and_log_urls(
             file_path = os.path.join(root, file)
 
             # Only process text-like files
-            if file_path.endswith((".xml", ".smali", ".txt")):
+            if file_path.endswith((".xml", ".smali", ".txt", ".yml")):
                 try:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
@@ -341,7 +339,7 @@ def recompile_app(input_filename, new_appname):
     # Produce unique apk.
     base_package_path = Path("tappedout", "smali", "com", "ea", "game", "simpsons4_row")
     files = list(base_package_path.iterdir())
-    target = Path(base_package_path, new_appname.replace(" ", "_") + "_r" + str(int(CURRENT_EPOCH_TIME)))
+    target = Path(base_package_path, new_appname.replace(" ", "_"))
     target.mkdir()
 
     for file in files:
@@ -359,7 +357,7 @@ def recompile_app(input_filename, new_appname):
     return output_filename
 
 
-def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appname, progress_bar):
+def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appname, new_version, progress_bar):
     try:
         progress_bar.start()
 
@@ -377,7 +375,7 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appna
 
         # 3) Replace text-based references (gameserver, director, etc.):
         replace_and_log_urls(
-            new_gameserver_url, new_dlcserver_url, new_appname
+            new_gameserver_url, new_dlcserver_url, new_appname, new_version
         )
 
         # 4) Perform direct binary patching on .so files for the DLC URL
@@ -394,7 +392,7 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appna
         progress_bar.stop()
 
 
-def run_apk_script(apk_file, gameserver_url, dlc_url, appname, progress_bar):
+def run_apk_script(apk_file, gameserver_url, dlc_url, appname, version, progress_bar):
     # Delete previous directories.
     tappedout = Path("tappedout")
     venv = Path("venv")
@@ -420,10 +418,13 @@ def run_apk_script(apk_file, gameserver_url, dlc_url, appname, progress_bar):
     # Avoid empty app name.
     if appname == "":
         appname = "Tapped Out"
+
+    if version == "":
+        version = "4.69.5"
     
     # Run the process
     try:
-        process_apk(apk_file, gameserver_url, dlc_url, appname, progress_bar)
+        process_apk(apk_file, gameserver_url, dlc_url, appname, version, progress_bar)
     except Exception as e:
         messagebox.showerror("Error", "An unexpected error has occured: " + str(e))
 

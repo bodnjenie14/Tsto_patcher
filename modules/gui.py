@@ -204,22 +204,29 @@ def start_apk_patcher():
     appname_entry.grid(row=3, column=1, columnspan=2, pady=5)
     add_placeholder(appname_entry, "Tapped Out")
 
+    version_label = ttk.Label(frame, text="App Version:")
+    version_label.grid(row=4, column=0, sticky="w")
+
+    version_entry = ttk.Entry(frame, width=50)
+    version_entry.grid(row=4, column=1, columnspan=2,pady=5)
+    add_placeholder(version_entry, "4.69.5")
+
     progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
-    progress_bar.grid(row=4, column=0, columnspan=3, pady=10, sticky="ew")
+    progress_bar.grid(row=5, column=0, columnspan=3, pady=10, sticky="ew")
 
     run_button = ttk.Button(
         frame,
         text="Patch APK",
         command=lambda: run_apk_script(
-            apk_entry.get().strip(), gameserver_entry.get().strip(), dlcserver_entry.get().strip(), appname_entry.get().strip(), progress_bar
+            apk_entry.get().strip(), gameserver_entry.get().strip(), dlcserver_entry.get().strip(), appname_entry.get().strip(), version_entry.get().strip(), progress_bar
         ),
     )  # Changed to lambda to pass in variables
-    run_button.grid(row=5, column=0, columnspan=3, pady=5)
+    run_button.grid(row=6, column=0, columnspan=3, pady=5)
 
     check_button = ttk.Button(
         frame, text="Check Dependencies", command=check_dependencies
     )
-    check_button.grid(row=6, column=0, columnspan=3, pady=5)
+    check_button.grid(row=7, column=0, columnspan=3, pady=5)
 
     # Footer
     footer_frame = tk.Frame(root, bg="#2e2e2e")
