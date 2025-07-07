@@ -188,14 +188,14 @@ def start_apk_patcher():
 
     gameserver_entry = ttk.Entry(frame, width=50)
     gameserver_entry.grid(row=1, column=1, columnspan=2, pady=5)
-    add_placeholder(gameserver_entry, "http://192.168.1.100:80")
+    add_placeholder(gameserver_entry, "http://192.168.1.100:8080")
 
     dlcserver_label = ttk.Label(frame, text="New DLC Server URL:")
     dlcserver_label.grid(row=2, column=0, sticky="w")
 
     dlcserver_entry = ttk.Entry(frame, width=50)
     dlcserver_entry.grid(row=2, column=1, columnspan=2, pady=5)
-    add_placeholder(dlcserver_entry, "http://192.168.1.101:80")
+    add_placeholder(dlcserver_entry, "http://192.168.1.101:8080/static/")
 
     appname_label = ttk.Label(frame, text="App Display Name:")
     appname_label.grid(row=3, column=0, sticky="w")
@@ -281,14 +281,14 @@ def start_ipa_patcher():
 
     gameserver_entry = ttk.Entry(frame, width=50)
     gameserver_entry.grid(row=1, column=1, columnspan=2, pady=5)
-    add_placeholder(gameserver_entry, "http://192.168.1.100:80")
+    add_placeholder(gameserver_entry, "http://192.168.1.100:8080")
 
     dlcserver_label = ttk.Label(frame, text="New DLC Server URL:")
     dlcserver_label.grid(row=2, column=0, sticky="w")
 
     dlcserver_entry = ttk.Entry(frame, width=50)
     dlcserver_entry.grid(row=2, column=1, columnspan=2, pady=5)
-    add_placeholder(dlcserver_entry, "http://192.168.1.101:80")
+    add_placeholder(dlcserver_entry, "http://192.168.1.101:8080/static/")
 
     progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
     progress_bar.grid(row=3, column=0, columnspan=3, pady=10, sticky="ew")
