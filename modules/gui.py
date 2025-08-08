@@ -315,11 +315,6 @@ def start_ipa_patcher():
     )  # Changed to lambda to pass in variables
     run_button.grid(row=6, column=0, columnspan=3, pady=5)
 
-    check_button = ttk.Button(
-        frame, text="Check Dependencies", command=check_dependencies
-    )
-    check_button.grid(row=7, column=0, columnspan=3, pady=5)
-
     # Footer
     footer_frame = tk.Frame(root, bg="#2e2e2e")
     footer_frame.pack(side="bottom", fill="x")
