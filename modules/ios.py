@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import messagebox
 from modules.misc import expand_url
 
-def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
+def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
     # Remove previous extracted folder.
     extracted_folder = Path("tsto_ipa_extracted")
     if extracted_folder.exists() is True:
@@ -25,7 +25,11 @@ def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
         return
 
 
-    # Avoid empty app name.
+    # Avoid empty bundle identifier, app name and version.
+ 
+    if bundle_id == "":
+        bundle_id = "com.ea.simpsonssocial.inc2"
+    
     if appname == "":
         appname = "Tapped Out"
 
@@ -36,12 +40,23 @@ def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
     with zipfile.ZipFile(ipa_file, "r") as zip_ref:
         zip_ref.extractall(extracted_folder)
 
-    app_folder = os.path.join(extracted_folder, "Payload", "Tapped Out.app")
-    plist_path = os.path.join(app_folder, "Info.plist")
-    binary_path = os.path.join(app_folder, "Tapped Out")
+    app_folder = Path(extracted_folder, "Payload", "Tapped Out.app")
+    binary_path = Path(app_folder, "Tapped Out")
 
     try:
+        # Read + update InfoPlist.strings
+        for plist_path in Path(app_folder).glob("*/InfoPlist.strings"):
+            with open(plist_path, "rb") as plist_file:
+                plist_data = plistlib.load(plist_file)
+                plist_data["CFBundleDisplayName"] = appname
+                plist_data["CFBundleName"] = appname
+
+            with open(plist_path, "wb") as string_file:
+                plistlib.dump(plist_data,  string_file)
+
         # Read + update Info.plist
+        plist_path = Path(app_folder, "Info.plist")
+
         with open(plist_path, "rb") as plist_file:
             plist_data = plistlib.load(plist_file)
 
@@ -49,6 +64,16 @@ def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
         # Credits to @Rudeboy and @BodNJenie for finding this fix!
         # Add NSAppTransportSecurity settings at the top level
         plist_data["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
+
+        # Set Bundle identifier, bundle display name and version.
+        #
+        plist_data["CFBundleIdentifier"] = bundle_id
+
+        plist_data["CFBundleDisplayName"] = appname
+        plist_data["CFBundleName"] = appname
+ 
+        plist_data["CFBundleShortVersionString"] = version
+        plist_data["CFBundleVersion"] = version
 
         new_server_url = ""
         if "MayhemServerURL" in plist_data:
@@ -126,11 +151,6 @@ def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
 
         print(f"Updated {binary_path} successfully.")
 
-        # Replace
-        replace_and_log_urls(
-            extracted_folder, appname, version
-        )
-
         # Package the IPA
         updated_ipa = f"{appname.replace(' ', '_')}.ipa"
         with zipfile.ZipFile(updated_ipa, "w", zipfile.ZIP_DEFLATED) as zipf:
@@ -146,56 +166,3 @@ def run_ipa_script(ipa_file, server_url, dlc_url, appname, version):
         messagebox.showerror("Error", "Required files not found.")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
-
-
-def replace_and_log_urls(
-    extracted_folder, new_appname, new_version
-):
-    """
-    Replace server URLs in the decompiled APK and log only the replacements.
-
-    This primarily modifies text-based files (.smali, .xml, .txt, .yml).
-    It does NOT handle binary .so patching.
-    """
-
-    replacements = {
-        "Tapped Out</string>": new_appname + "</string>",
-        "Springfield</string>": new_appname + "</string>",
-        "4.69.5": new_version
-    }
-
-    log = []  # Store logs of replacements
-
-    for root, _, files in os.walk(Path(extracted_folder, "Payload", "Tapped Out.app")):
-        for file in files:
-            file_path = os.path.join(root, file)
-
-            # Only process text-like files
-            if file_path.endswith((".xml", ".strings", ".plist")):
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
-                except Exception as e:
-                    print(f"Failed to read file: {file_path}, Error: {e}")
-                    continue
-
-                modified = False
-                for original, replacement in replacements.items():
-                    if original in content:
-                        log.append(
-                            f"Replaced '{original}' with '{replacement}' in {file_path}"
-                        )
-                        content = content.replace(original, replacement)
-                        modified = True
-
-                if modified:
-                    try:
-                        with open(
-                            file_path, "w", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            f.write(content)
-                    except Exception as e:
-                        print(f"Failed to write to file: {file_path}, Error: {e}")
-
-    # Print the log to console (and you could optionally save it somewhere)
-    print("\n".join(log))
