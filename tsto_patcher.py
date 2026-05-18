@@ -1,21 +1,14 @@
-from pathlib import Path
-import shutil
 from modules.gui import start_selection
+from modules.misc import safe_rmtree
 
 ###############STARTUP
 
 start_selection()
 
 # Delete previous directories
-tappedout = Path("tappedout")
-venv = Path("venv")
-ipa = Path("tsto_ipa_extracted")
-if tappedout.exists() is True:
-    shutil.rmtree(tappedout)
-if venv.exists() is True:
-    shutil.rmtree(venv)
-if ipa.exists() is True:
-    shutil.rmtree(ipa)
+safe_rmtree("tappedout")
+safe_rmtree("venv")
+safe_rmtree("tsto_ipa_extracted")
 
 # coded by @bodnjenie and @dractiums
 # credit to @tjac for patching logic

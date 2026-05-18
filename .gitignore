@@ -7,3 +7,12 @@ Original Files/Splash.apk
 Original Files/Splash.ipa
 .DS_Store
 modules/__pycache__/
+__pycache__/
+venv/
+tappedout/
+tsto_ipa_extracted/
+get-pip.py
+/*.apk
+/*.ipa
+tsto-release.keystore
+

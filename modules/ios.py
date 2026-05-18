@@ -4,13 +4,14 @@ import plistlib
 import zipfile
 from pathlib import Path
 from tkinter import messagebox
-from modules.misc import expand_url
+from modules.misc import expand_url, safe_rmtree
+from modules.icon import replace_ios_icons
 
-def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
+def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version, icon_path=None, status=print):
     # Remove previous extracted folder.
+    status("Cleaning up previous extracted folder...")
+    safe_rmtree("tsto_ipa_extracted")
     extracted_folder = Path("tsto_ipa_extracted")
-    if extracted_folder.exists() is True:
-        shutil.rmtree(extracted_folder)
 
     # Remove a / at the end of the server URL.
     if server_url.endswith("/"):
@@ -37,6 +38,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
         version = "4.69.5"
 
     # Extract IPA
+    status("Step 1/4: Extracting IPA...")
     with zipfile.ZipFile(ipa_file, "r") as zip_ref:
         zip_ref.extractall(extracted_folder)
 
@@ -44,6 +46,15 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
     binary_path = Path(app_folder, "Tapped Out")
 
     try:
+        # Replace the app icon if the user supplied one.
+        if icon_path:
+            if not os.path.exists(icon_path):
+                messagebox.showerror("Error", f"Icon file {icon_path} does not exist.")
+                return
+            status("Replacing app icon...")
+            replace_ios_icons(app_folder, icon_path)
+
+        status("Step 2/4: Updating Info.plist (bundle id, name, version, URLs)...")
         # Read + update InfoPlist.strings
         for plist_path in Path(app_folder).glob("*/InfoPlist.strings"):
             with open(plist_path, "rb") as plist_file:
@@ -123,6 +134,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
         ]
         new_urls = [new_dlc_url, new_server_url, "https://google.com"]
 
+        status("Step 3/4: Binary-patching the app (URLs + signature bypass)...")
         with open(binary_path, "rb") as file:
             content = bytearray(file.read())
 
@@ -152,6 +164,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
         print(f"Updated {binary_path} successfully.")
 
         # Package the IPA
+        status("Step 4/4: Repackaging IPA...")
         updated_ipa = f"{appname.replace(' ', '_')}.ipa"
         with zipfile.ZipFile(updated_ipa, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(extracted_folder):
@@ -160,6 +173,7 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version):
                     zipf.write(file_path, os.path.relpath(file_path, extracted_folder))
 
         print(f"Patched IPA saved as {updated_ipa}")
+        status(f"Done. Patched IPA created: {updated_ipa}")
         messagebox.showinfo("Success", f"Patched IPA created: {updated_ipa}")
 
     except FileNotFoundError:

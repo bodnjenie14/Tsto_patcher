@@ -5,7 +5,8 @@ import subprocess
 import requests
 from pathlib import Path
 from tkinter import  messagebox
-from modules.misc import expand_url
+from modules.misc import expand_url, safe_rmtree
+from modules.icon import replace_android_icons
 
 def check_dependencies():
     """Check if all required dependencies are installed."""
@@ -44,7 +45,46 @@ def check_dependencies():
         messagebox.showinfo("Dependencies", "All dependencies are installed.")
 
 
-def install_dependencies():
+def run_streamed(cmd, status=print):
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    for line in proc.stdout:
+        line = line.rstrip()
+        if line:
+            status(line)
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+
+
+def java_tool(name):
+    """Locate a JDK tool (keytool/jarsigner). Falls back to JAVA_HOME/bin or
+    the folder containing java."""
+    found = shutil.which(name)
+    if found:
+        return found
+    java = shutil.which("java")
+    java_home = os.environ.get("JAVA_HOME")
+    for base in (
+        os.path.join(java_home, "bin") if java_home else None,
+        os.path.dirname(java) if java else None,
+    ):
+        if base:
+            candidate = os.path.join(base, name + (".exe" if sys.platform == "win32" else ""))
+            if os.path.isfile(candidate):
+                return candidate
+    return name
+
+
+def install_dependencies(status=print):
     """Install all necessary dependencies for the APK patching process."""
     # Check for Python (should already be running with Python)
     if not shutil.which("python3") and not shutil.which("python"):
@@ -67,79 +107,32 @@ def install_dependencies():
                 ["sudo", "apt-get", "install", "-y", "openjdk-11-jre"], check=True
             )
 
-    # Download apktool
+    # apktool jar is all we need - the rebuild uses `java -jar apktool`
+    # and signing uses the JDK's own keytool/jarsigner. No pip, no SDK,
+    # no venv (those break behind strict AV/firewalls).
     apktool_jar = "apktool_2.10.0.jar"
-    apktool_script = "apktool"
     if not os.path.isfile(apktool_jar):
+        status("Downloading apktool...")
         download_file(
             "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar",
             apktool_jar,
         )
-    if not shutil.which(apktool_script):
-        wrapper_url = (
-            "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool"
-            if sys.platform != "win32"
-            else "https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/windows/apktool.bat"
-        )
-        wrapper_dest = apktool_script if sys.platform != "win32" else "apktool.bat"
-        download_file(wrapper_url, wrapper_dest)
-        os.chmod(wrapper_dest, 0o755)
-
-    # Download Android SDK tools
-    sdk_tools_url = (
-        "https://dl.google.com/android/repository/commandlinetools-win-9477386_latest.zip"
-        if sys.platform == "win32"
-        else "https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip"
-    )
-    sdk_tools_zip = "cmdline-tools.zip"
-    sdk_tools_dir = "android-sdk"
-    if not os.path.isdir(sdk_tools_dir):
-        download_file(sdk_tools_url, sdk_tools_zip)
-        shutil.unpack_archive(sdk_tools_zip, sdk_tools_dir)
-        os.remove(sdk_tools_zip)
-
-    # Install platform tools
-    platform_tools_url = (
-        "https://dl.google.com/android/repository/platform-tools_r34.0.4-windows.zip"
-        if sys.platform == "win32"
-        else "https://dl.google.com/android/repository/platform-tools_r34.0.4-linux.zip"
-    )
-    platform_tools_zip = "platform-tools.zip"
-    platform_tools_dir = "platform-tools"
-    if not os.path.isdir(platform_tools_dir):
-        download_file(platform_tools_url, platform_tools_zip)
-        shutil.unpack_archive(platform_tools_zip, platform_tools_dir)
-        os.remove(platform_tools_zip)
-
-    # Create and activate a Python virtual environment
-    pip_path = "venv\\Scripts\\pip" if sys.platform == "win32" else "venv/bin/pip"
-    if not os.path.isdir("venv"):
-        subprocess.run([sys.executable, "-m", "venv", "venv"], check=True)
-
-    # Install Python dependencies
-    # subprocess.run([pip_path, "install", "--upgrade", "pip"], check=True)  # might need admin role; skip by default
-
-    subprocess.run([pip_path, "install", "buildapp"], check=True)
-    buildapp_fetch_tools = (
-        "venv\\Scripts\\buildapp_fetch_tools"
-        if sys.platform == "win32"
-        else "venv/bin/buildapp_fetch_tools"
-    )
-    subprocess.run([buildapp_fetch_tools], check=True)
 
 
 def download_file(url, dest):
     """Download a file from the specified URL to the destination path."""
     try:
-        req = requests.get(url)
-        if req.status_code != 200:
-            messagebox.showerror(
-                "Download Error",
-                f"Failed to download {url}. Status code = {req.status_code}",
-            )
-            sys.exit(1)
-        with open(dest, "wb") as f:
-            f.write(req.content)
+        with requests.get(url, stream=True, timeout=30) as req:
+            if req.status_code != 200:
+                messagebox.showerror(
+                    "Download Error",
+                    f"Failed to download {url}. Status code = {req.status_code}",
+                )
+                sys.exit(1)
+            with open(dest, "wb") as f:
+                for chunk in req.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
 
     except Exception as e:
         messagebox.showerror("Download Error", f"Failed to download {url}: {e}")
@@ -333,8 +326,8 @@ def perform_binary_patching(decompiled_path, new_dlcserver_url):
             print(f"[ERROR] Could not patch {file_path}: {e}")
 
 
-def recompile_app(input_filename, new_appname):
-    """Recompile the patched APK."""
+def recompile_app(input_filename, new_appname, status=print):
+    """Rebuild the patched APK with apktool and sign it with the JDK."""
 
     # Produce unique apk.
     base_package_path = Path("tappedout", "smali", "com", "ea", "game", "simpsons4_row")
@@ -345,19 +338,48 @@ def recompile_app(input_filename, new_appname):
     for file in files:
         os.rename(file, Path(target, file.name))
 
-    buildapp_path = (
-        "venv\\Scripts\\buildapp" if sys.platform == "win32" else "venv/bin/buildapp"
+    safe_name = new_appname.replace(" ", "_")
+    output_filename = f"{safe_name}.apk"
+    if os.path.isfile(output_filename):
+        os.remove(output_filename)
+
+    status("Building APK with apktool...")
+    run_streamed(
+        ["java", "-jar", "apktool_2.10.0.jar", "b", "tappedout", "-o", output_filename],
+        status,
     )
-    output_filename = (
-        f"{new_appname.replace(' ', '_')}.apk"
-    )
-    subprocess.run(
-        [buildapp_path, "-d", "tappedout", "-o", output_filename],
+
+    keystore = "tsto-release.keystore"
+    alias = "tsto"
+    storepass = "tstotsto"
+    if not os.path.isfile(keystore):
+        status("Creating signing keystore...")
+        run_streamed(
+            [
+                java_tool("keytool"), "-genkeypair", "-noprompt",
+                "-keystore", keystore, "-alias", alias,
+                "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+                "-storepass", storepass, "-keypass", storepass,
+                "-dname", "CN=TSTO, OU=TSTO, O=TSTO, L=NA, ST=NA, C=NA",
+            ],
+            status,
+        )
+
+    status("Signing APK...")
+    run_streamed(
+        [
+            java_tool("jarsigner"),
+            "-keystore", keystore,
+            "-storepass", storepass, "-keypass", storepass,
+            "-sigalg", "SHA256withRSA", "-digestalg", "SHA-256",
+            output_filename, alias,
+        ],
+        status,
     )
     return output_filename
 
 
-def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appname, new_version, progress_bar):
+def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appname, new_version, progress_bar, icon_path=None, status=print):
     try:
         progress_bar.start()
 
@@ -368,38 +390,48 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appna
         os.environ["DIRECTOR_URL"] = new_gameserver_url
 
         # 1) Install dependencies
-        install_dependencies()
+        status("Step 1/5: Checking dependencies (apktool + JDK)...")
+        install_dependencies(status)
 
         # 2) Decompile the APK
+        status("Step 2/5: Decompiling APK with apktool...")
         decompile_app(input_filename)
 
         # 3) Replace text-based references (gameserver, director, etc.):
+        status("Step 3/5: Replacing gameserver/DLC URLs and app name...")
         replace_and_log_urls(
             new_gameserver_url, new_dlcserver_url, new_appname, new_version
         )
 
         # 4) Perform direct binary patching on .so files for the DLC URL
+        status("Step 4/5: Binary-patching .so libraries (DLC URL + signature bypass)...")
         perform_binary_patching("./tappedout", new_dlcserver_url)
 
-        # 5) Recompile the patched APK
-        output_filename = recompile_app(input_filename, new_appname)
+        # 4b) Replace the app icon if the user supplied one.
+        if icon_path:
+            status("Replacing app icon...")
+            replace_android_icons("./tappedout", icon_path)
 
+        # 5) Recompile the patched APK
+        status("Step 5/5: Rebuilding and signing APK (apktool)... this is the slow part, please wait.")
+        output_filename = recompile_app(input_filename, new_appname, status)
+
+        status(f"Done. Patched APK created: {output_filename}")
         messagebox.showinfo("Success", f"Patched APK created: {output_filename}")
     except FileNotFoundError as e:
+        status(f"Failed: {e}")
         messagebox.showerror("Dependency Error", str(e))
     except subprocess.CalledProcessError as e:
+        status(f"Failed: {e}")
         messagebox.showerror("Error", f"An error occurred: {e}")
         progress_bar.stop()
 
 
-def run_apk_script(apk_file, gameserver_url, dlc_url, appname, version, progress_bar):
+def run_apk_script(apk_file, gameserver_url, dlc_url, appname, version, progress_bar, icon_path=None, status=print):
     # Delete previous directories.
-    tappedout = Path("tappedout")
-    venv = Path("venv")
-    if tappedout.exists() is True:
-        shutil.rmtree(tappedout)
-    if venv.exists() is True:
-        shutil.rmtree(venv)
+    status("Cleaning up previous build folders...")
+    safe_rmtree("tappedout")
+    safe_rmtree("venv")
 
 
     # Remove a / at the end of the gameserver URL
@@ -421,10 +453,16 @@ def run_apk_script(apk_file, gameserver_url, dlc_url, appname, version, progress
 
     if version == "":
         version = "4.69.5"
-    
+
+    # Validate the optional custom icon.
+    if icon_path and not os.path.exists(icon_path):
+        messagebox.showerror("Error", f"Icon file {icon_path} does not exist.")
+        return
+
     # Run the process
     try:
-        process_apk(apk_file, gameserver_url, dlc_url, appname, version, progress_bar)
+        process_apk(apk_file, gameserver_url, dlc_url, appname, version, progress_bar, icon_path, status)
     except Exception as e:
+        status(f"Failed: {e}")
         messagebox.showerror("Error", "An unexpected error has occured: " + str(e))
 

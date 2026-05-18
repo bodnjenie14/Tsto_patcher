@@ -1,11 +1,173 @@
+import queue
+import threading
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from pathlib import Path
+import modules.android as android_mod
+import modules.ios as ios_mod
 from modules.android import check_dependencies, run_apk_script
 from modules.ios import run_ipa_script
+from modules.config import load_profiles, save_profiles
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def default_source(ext):
+    candidate = PROJECT_ROOT / "Original Files" / f"tsto_original.{ext}"
+    return str(candidate) if candidate.exists() else ""
+
+
+class _MainThreadMessageBox:
+    def __init__(self, root):
+        self._root = root
+
+    def _call(self, fn, title, message):
+        if threading.current_thread() is threading.main_thread():
+            return fn(title, message)
+        done = threading.Event()
+        box = {}
+
+        def run():
+            try:
+                box["result"] = fn(title, message)
+            finally:
+                done.set()
+
+        self._root.after(0, run)
+        done.wait()
+        return box.get("result")
+
+    def showinfo(self, title, message):
+        return self._call(messagebox.showinfo, title, message)
+
+    def showerror(self, title, message):
+        return self._call(messagebox.showerror, title, message)
+
+    def showwarning(self, title, message):
+        return self._call(messagebox.showwarning, title, message)
+
+    def askyesno(self, title, message):
+        return self._call(messagebox.askyesno, title, message)
+
+
+def run_patch_in_thread(root, run_button, progress_bar, status_var, worker):
+    msg_queue = queue.Queue()
+
+    def status_cb(message):
+        print(message)
+        msg_queue.put(message)
+
+    proxy = _MainThreadMessageBox(root)
+    android_mod.messagebox = proxy
+    ios_mod.messagebox = proxy
+
+    run_button.config(state="disabled")
+    progress_bar.start()
+
+    thread = threading.Thread(target=lambda: worker(status_cb), daemon=True)
+    thread.start()
+
+    def poll():
+        while True:
+            try:
+                status_var.set(msg_queue.get_nowait())
+            except queue.Empty:
+                break
+        if thread.is_alive():
+            root.after(150, poll)
+        else:
+            progress_bar.stop()
+            run_button.config(state="normal")
+
+    root.after(150, poll)
+
+ICON_PLACEHOLDER = "Optional - PNG/JPG to replace app icon"
+
+
+def resolve_value(entry):
+    value = entry.get().strip()
+    placeholder = getattr(entry, "_placeholder", None)
+    if not value or (placeholder is not None and value == placeholder):
+        return ""
+    return value
+
+
+def resolve_icon(icon_entry):
+    return resolve_value(icon_entry) or None
+
+
+def set_entry(entry, value):
+    entry.delete(0, tk.END)
+    entry.configure(foreground="white")
+    entry.insert(0, value)
+
+
+def add_profile_selector(parent, root, entries):
+    profiles = load_profiles()
+
+    profile_frame = ttk.Frame(root, padding="10")
+    profile_frame.pack(fill="x", before=parent)
+
+    ttk.Label(profile_frame, text="Profile:").pack(side="left")
+
+    profile_combo = ttk.Combobox(
+        profile_frame, state="readonly", values=list(profiles.keys()), width=24
+    )
+    profile_combo.pack(side="left", padx=5)
+
+    def apply_profile(_event=None):
+        prof = profiles.get(profile_combo.get())
+        if not prof:
+            return
+        for key, entry in entries.items():
+            if prof.get(key):
+                set_entry(entry, prof[key])
+
+    def save_profile():
+        name = simpledialog.askstring(
+            "Save Profile",
+            "Profile name (existing name overwrites it):",
+            initialvalue=profile_combo.get(),
+            parent=root,
+        )
+        if not name:
+            return
+        name = name.strip()
+        if not name:
+            return
+
+        prof = {}
+        for key, entry in entries.items():
+            value = resolve_value(entry)
+            if value:
+                prof[key] = value
+
+        if not prof:
+            messagebox.showwarning(
+                "Save Profile", "Nothing to save - fill in some fields first."
+            )
+            return
+
+        profiles[name] = prof
+        save_profiles(profiles)
+        profile_combo["values"] = list(profiles.keys())
+        profile_combo.set(name)
+        messagebox.showinfo(
+            "Save Profile",
+            f"Profile '{name}' saved to profiles.json:\n\n"
+            + "\n".join(f"{k}: {v}" for k, v in prof.items()),
+        )
+
+    profile_combo.bind("<<ComboboxSelected>>", apply_profile)
+    ttk.Button(profile_frame, text="Save Profile", command=save_profile).pack(
+        side="left", padx=5
+    )
+    return profile_combo
+
 
 def add_placeholder(entry, placeholder):
     # Create a placeholder behavior
+    entry._placeholder = placeholder
     entry.insert(0, placeholder)
     entry.configure(foreground="#A9A9A9")
 
@@ -31,6 +193,18 @@ def configure_style():
     style.configure("TButton", background="#4a4a4a", foreground="#ffffff")
     style.configure("TEntry", fieldbackground="#4a4a4a", foreground="#ffffff")
     style.configure("TFrame", background="#2e2e2e")
+    style.configure(
+        "TCombobox",
+        fieldbackground="#4a4a4a",
+        background="#4a4a4a",
+        foreground="#ffffff",
+        arrowcolor="#ffffff",
+    )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", "#4a4a4a")],
+        foreground=[("readonly", "#ffffff")],
+    )
     return style
 
 
@@ -169,16 +343,18 @@ def start_apk_patcher():
 
     apk_entry = ttk.Entry(frame, width=50)
     apk_entry.grid(row=0, column=1, padx=5)
+    apk_entry.insert(0, default_source("apk"))
 
     def browse_apk_file():
-        initialdir = Path.cwd()
-        if Path("Original Files").exists() is True:
-            initialdir = Path("Original Files")
+        initialdir = PROJECT_ROOT / "Original Files"
+        if not initialdir.exists():
+            initialdir = Path.cwd()
         file_path = filedialog.askopenfilename(
             initialdir=initialdir, filetypes=[("APK files", "*.apk")]
         )
-        apk_entry.delete(0, tk.END)
-        apk_entry.insert(0, file_path)
+        if file_path:
+            apk_entry.delete(0, tk.END)
+            apk_entry.insert(0, file_path)
 
     browse_button = ttk.Button(frame, text="Browse", command=browse_apk_file)
     browse_button.grid(row=0, column=2, padx=5)
@@ -211,22 +387,72 @@ def start_apk_patcher():
     version_entry.grid(row=4, column=1, columnspan=2,pady=5)
     add_placeholder(version_entry, "4.69.5")
 
-    progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
-    progress_bar.grid(row=5, column=0, columnspan=3, pady=10, sticky="ew")
+    icon_label = ttk.Label(frame, text="App Icon:")
+    icon_label.grid(row=5, column=0, sticky="w")
 
-    run_button = ttk.Button(
+    icon_entry = ttk.Entry(frame, width=50)
+    icon_entry.grid(row=5, column=1, padx=5)
+    add_placeholder(icon_entry, ICON_PLACEHOLDER)
+
+    def browse_icon_file():
+        file_path = filedialog.askopenfilename(
+            initialdir=Path.cwd(),
+            filetypes=[("Image files", "*.png *.jpg *.jpeg")],
+        )
+        if file_path:
+            icon_entry.delete(0, tk.END)
+            icon_entry.configure(foreground="white")
+            icon_entry.insert(0, file_path)
+
+    icon_browse_button = ttk.Button(frame, text="Browse", command=browse_icon_file)
+    icon_browse_button.grid(row=5, column=2, padx=5)
+
+    add_profile_selector(
         frame,
-        text="Patch APK",
-        command=lambda: run_apk_script(
-            apk_entry.get().strip(), gameserver_entry.get().strip(), dlcserver_entry.get().strip(), appname_entry.get().strip(), version_entry.get().strip(), progress_bar
-        ),
-    )  # Changed to lambda to pass in variables
-    run_button.grid(row=6, column=0, columnspan=3, pady=5)
+        root,
+        {
+            "gameserver": gameserver_entry,
+            "dlc": dlcserver_entry,
+            "appname": appname_entry,
+            "version": version_entry,
+            "icon": icon_entry,
+        },
+    )
+
+    progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="indeterminate")
+    progress_bar.grid(row=6, column=0, columnspan=3, pady=10, sticky="ew")
+
+    status_var = tk.StringVar(value="Idle")
+    status_label = ttk.Label(
+        frame, textvariable=status_var, wraplength=440, justify="left"
+    )
+    status_label.grid(row=7, column=0, columnspan=3, sticky="w")
+
+    def start_apk_patch():
+        run_patch_in_thread(
+            root,
+            run_button,
+            progress_bar,
+            status_var,
+            lambda status_cb: run_apk_script(
+                apk_entry.get().strip(),
+                gameserver_entry.get().strip(),
+                dlcserver_entry.get().strip(),
+                appname_entry.get().strip(),
+                version_entry.get().strip(),
+                progress_bar,
+                resolve_icon(icon_entry),
+                status_cb,
+            ),
+        )
+
+    run_button = ttk.Button(frame, text="Patch APK", command=start_apk_patch)
+    run_button.grid(row=8, column=0, columnspan=3, pady=5)
 
     check_button = ttk.Button(
         frame, text="Check Dependencies", command=check_dependencies
     )
-    check_button.grid(row=7, column=0, columnspan=3, pady=5)
+    check_button.grid(row=9, column=0, columnspan=3, pady=5)
 
     # Footer
     footer_frame = tk.Frame(root, bg="#2e2e2e")
@@ -241,6 +467,8 @@ def start_apk_patcher():
         footer_frame, text="Bodnjenie™ & Dractiums", bg="#2e2e2e", fg="#ffffff", anchor="e"
     )
     footer_label.pack(side="right", padx=10, pady=5)
+
+    root.mainloop()
 
 
 #############################IPA PATCHER
@@ -261,16 +489,18 @@ def start_ipa_patcher():
 
     ipa_entry = ttk.Entry(frame, width=50)
     ipa_entry.grid(row=0, column=1, padx=5)
+    ipa_entry.insert(0, default_source("ipa"))
 
     def browse_ipa_file():
-        initialdir = Path.cwd()
-        if Path("Original Files").exists() is True:
-            initialdir = Path("Original Files")
+        initialdir = PROJECT_ROOT / "Original Files"
+        if not initialdir.exists():
+            initialdir = Path.cwd()
         file_path = filedialog.askopenfilename(
             initialdir=initialdir, filetypes=[("IPA files", "*.ipa")]
         )
-        ipa_entry.delete(0, tk.END)
-        ipa_entry.insert(0, file_path)
+        if file_path:
+            ipa_entry.delete(0, tk.END)
+            ipa_entry.insert(0, file_path)
 
     browse_button = ttk.Button(frame, text="Browse", command=browse_ipa_file)
     browse_button.grid(row=0, column=2, padx=5)
@@ -310,17 +540,68 @@ def start_ipa_patcher():
     version_entry.grid(row=5, column=1, columnspan=2,pady=5)
     add_placeholder(version_entry, "4.69.5")
 
-    progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="determinate")
-    progress_bar.grid(row=6, column=0, columnspan=3, pady=10, sticky="ew")
+    icon_label = ttk.Label(frame, text="App Icon:")
+    icon_label.grid(row=6, column=0, sticky="w")
 
-    run_button = ttk.Button(
+    icon_entry = ttk.Entry(frame, width=50)
+    icon_entry.grid(row=6, column=1, padx=5)
+    add_placeholder(icon_entry, ICON_PLACEHOLDER)
+
+    def browse_icon_file():
+        file_path = filedialog.askopenfilename(
+            initialdir=Path.cwd(),
+            filetypes=[("Image files", "*.png *.jpg *.jpeg")],
+        )
+        if file_path:
+            icon_entry.delete(0, tk.END)
+            icon_entry.configure(foreground="white")
+            icon_entry.insert(0, file_path)
+
+    icon_browse_button = ttk.Button(frame, text="Browse", command=browse_icon_file)
+    icon_browse_button.grid(row=6, column=2, padx=5)
+
+    add_profile_selector(
         frame,
-        text="Patch IPA",
-        command=lambda: run_ipa_script(
-            ipa_entry.get().strip(), gameserver_entry.get().strip(), dlcserver_entry.get().strip(), bundleid_entry.get().strip(), appname_entry.get().strip(), version_entry.get().strip()
-        ),
-    )  # Changed to lambda to pass in variables
-    run_button.grid(row=7, column=0, columnspan=3, pady=5)
+        root,
+        {
+            "gameserver": gameserver_entry,
+            "dlc": dlcserver_entry,
+            "bundleid": bundleid_entry,
+            "appname": appname_entry,
+            "version": version_entry,
+            "icon": icon_entry,
+        },
+    )
+
+    progress_bar = ttk.Progressbar(frame, orient="horizontal", mode="indeterminate")
+    progress_bar.grid(row=7, column=0, columnspan=3, pady=10, sticky="ew")
+
+    status_var = tk.StringVar(value="Idle")
+    status_label = ttk.Label(
+        frame, textvariable=status_var, wraplength=440, justify="left"
+    )
+    status_label.grid(row=8, column=0, columnspan=3, sticky="w")
+
+    def start_ipa_patch():
+        run_patch_in_thread(
+            root,
+            run_button,
+            progress_bar,
+            status_var,
+            lambda status_cb: run_ipa_script(
+                ipa_entry.get().strip(),
+                gameserver_entry.get().strip(),
+                dlcserver_entry.get().strip(),
+                bundleid_entry.get().strip(),
+                appname_entry.get().strip(),
+                version_entry.get().strip(),
+                resolve_icon(icon_entry),
+                status_cb,
+            ),
+        )
+
+    run_button = ttk.Button(frame, text="Patch IPA", command=start_ipa_patch)
+    run_button.grid(row=9, column=0, columnspan=3, pady=5)
 
     # Footer
     footer_frame = tk.Frame(root, bg="#2e2e2e")
@@ -335,3 +616,5 @@ def start_ipa_patcher():
         footer_frame, text="Bodnjenie™ & Dractiums", bg="#2e2e2e", fg="#ffffff", anchor="e"
     )
     footer_label.pack(side="right", padx=10, pady=5)
+
+    root.mainloop()

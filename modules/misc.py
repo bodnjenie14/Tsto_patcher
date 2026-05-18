@@ -1,3 +1,25 @@
+import os
+import stat
+import shutil
+
+
+def safe_rmtree(path):
+    if not os.path.isdir(path):
+        return
+
+    def _onexc(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception as e:
+            print(f"Could not remove {p}: {e}")
+
+    try:
+        shutil.rmtree(path, onexc=_onexc)
+    except TypeError:
+        shutil.rmtree(path, onerror=lambda f, p, e: _onexc(f, p, e))
+
+
 def expand_url(url, new_length):
     # If length is less than current length, return current url unchanged.
     url_diff = new_length - len(url)
