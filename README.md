@@ -4,12 +4,12 @@ Game patchers for TSTO.
 ## How to use
 1. Run tsto_patcher.py in CMD
 ```
-python .\tsto_patcher.py
+python tsto_patcher.py
 ```
 2. Select if you wish to patch an APK (Android) or IPA (IOS)
 3. Click "Browse" and select your APK/IPA
 4. Input your server URL **e.g. http://192.168.1.10:80**
-5. Input your DLC URL **e.g. http://192.168.1.11:80**
+5. Input your DLC URL **e.g. http://192.168.1.11:80/static/**
 6. Click "Patch (APK/IPA)"
 7. If there are any errors, click "Check Dependencies"
 8. Your new file will be created:<br>

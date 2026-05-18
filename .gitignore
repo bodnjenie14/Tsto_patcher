@@ -1,0 +1,9 @@
+Payload/
+android-sdk/
+platform-tools/
+*.jar
+*.*~
+Original Files/Splash.apk
+Original Files/Splash.ipa
+.DS_Store
+modules/__pycache__/
