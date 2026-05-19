@@ -86,6 +86,23 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version, i
         plist_data["CFBundleShortVersionString"] = version
         plist_data["CFBundleVersion"] = version
 
+        # The home-screen icon comes from Assets.car via CFBundleIconName.
+        # We can't rebuild Assets.car on Windows, so drop CFBundleIconName to
+        # make iOS fall back to the loose CFBundleIconFiles PNGs we replaced.
+        if icon_path:
+            for key in ("CFBundleIcons", "CFBundleIcons~ipad"):
+                icons = plist_data.get(key)
+                if isinstance(icons, dict):
+                    primary = icons.get("CFBundlePrimaryIcon")
+                    if isinstance(primary, dict):
+                        primary.pop("CFBundleIconName", None)
+                        files = list(primary.get("CFBundleIconFiles") or [])
+                        for n in ("AppIcon60x60", "AppIcon76x76"):
+                            if n not in files:
+                                files.append(n)
+                        primary["CFBundleIconFiles"] = files
+            plist_data.pop("CFBundleIconName", None)
+
         new_server_url = ""
         if "MayhemServerURL" in plist_data:
             new_server_url = server_url.rstrip("/")

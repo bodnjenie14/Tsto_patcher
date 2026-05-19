@@ -17,6 +17,16 @@ ANDROID_ICON_NAMES = {
 
 IOS_ICON_PREFIXES = ("Icon", "AppIcon")
 
+# Files iOS falls back to (via CFBundleIconFiles AppIcon60x60 / AppIcon76x76)
+# once CFBundleIconName is removed so the Assets.car icon is bypassed.
+IOS_CANONICAL_ICONS = {
+    "AppIcon60x60@2x.png": 120,
+    "AppIcon60x60@3x.png": 180,
+    "AppIcon76x76~ipad.png": 76,
+    "AppIcon76x76@2x~ipad.png": 152,
+    "AppIcon83.5x83.5@2x~ipad.png": 167,
+}
+
 
 def _png_size(path):
     with open(path, "rb") as f:
@@ -94,5 +104,13 @@ def replace_ios_icons(app_folder, source_path):
                 _render(src, target).save(file, "PNG")
                 replaced += 1
                 print(f"Replaced {file.name} ({target}x{target})")
+
+        # The springboard icon lives in Assets.car (CFBundleIconName: AppIcon).
+        # ios.py strips CFBundleIconName so iOS falls back to these loose
+        # CFBundleIconFiles - make sure they exist at the right sizes.
+        for name, dim in IOS_CANONICAL_ICONS.items():
+            _render(src, dim).save(app_folder / name, "PNG")
+            replaced += 1
+            print(f"Wrote {name} ({dim}x{dim})")
 
     print(f"Replaced {replaced} iOS app icons.")
