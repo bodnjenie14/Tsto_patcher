@@ -14,5 +14,6 @@ tsto_ipa_extracted/
 get-pip.py
 /*.apk
 /*.ipa
+*.idsig
 tsto-release.keystore
 

@@ -65,23 +65,12 @@ def run_streamed(cmd, status=print):
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
-def java_tool(name):
-    """Locate a JDK tool (keytool/jarsigner). Falls back to JAVA_HOME/bin or
-    the folder containing java."""
-    found = shutil.which(name)
-    if found:
-        return found
-    java = shutil.which("java")
-    java_home = os.environ.get("JAVA_HOME")
-    for base in (
-        os.path.join(java_home, "bin") if java_home else None,
-        os.path.dirname(java) if java else None,
-    ):
-        if base:
-            candidate = os.path.join(base, name + (".exe" if sys.platform == "win32" else ""))
-            if os.path.isfile(candidate):
-                return candidate
-    return name
+APKTOOL_JAR = "apktool_2.10.0.jar"
+UBER_SIGNER_JAR = "uber-apk-signer-1.3.0.jar"
+UBER_SIGNER_URL = (
+    "https://github.com/patrickfav/uber-apk-signer/releases/download/"
+    "v1.3.0/uber-apk-signer-1.3.0.jar"
+)
 
 
 def install_dependencies(status=print):
@@ -107,16 +96,19 @@ def install_dependencies(status=print):
                 ["sudo", "apt-get", "install", "-y", "openjdk-11-jre"], check=True
             )
 
-    # apktool jar is all we need - the rebuild uses `java -jar apktool`
-    # and signing uses the JDK's own keytool/jarsigner. No pip, no SDK,
-    # no venv (those break behind strict AV/firewalls).
-    apktool_jar = "apktool_2.10.0.jar"
-    if not os.path.isfile(apktool_jar):
+    # We rebuild with `java -jar apktool` and sign with uber-apk-signer
+    # (zipalign + v1/v2/v3, needed for Android 11+/MuMu). No pip/SDK/venv -
+    # those break behind strict AV/firewalls.
+    if not os.path.isfile(APKTOOL_JAR):
         status("Downloading apktool...")
         download_file(
             "https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar",
-            apktool_jar,
+            APKTOOL_JAR,
         )
+
+    if not os.path.isfile(UBER_SIGNER_JAR):
+        status("Downloading uber-apk-signer...")
+        download_file(UBER_SIGNER_URL, UBER_SIGNER_JAR)
 
 
 def download_file(url, dest):
@@ -327,7 +319,8 @@ def perform_binary_patching(decompiled_path, new_dlcserver_url):
 
 
 def recompile_app(input_filename, new_appname, status=print):
-    """Rebuild the patched APK with apktool and sign it with the JDK."""
+    """Rebuild the patched APK with apktool, then zipalign + sign it with
+    uber-apk-signer (v1/v2/v3 - required for Android 11+/MuMu)."""
 
     # Produce unique apk.
     base_package_path = Path("tappedout", "smali", "com", "ea", "game", "simpsons4_row")
@@ -345,34 +338,18 @@ def recompile_app(input_filename, new_appname, status=print):
 
     status("Building APK with apktool...")
     run_streamed(
-        ["java", "-jar", "apktool_2.10.0.jar", "b", "tappedout", "-o", output_filename],
+        ["java", "-jar", APKTOOL_JAR, "b", "tappedout", "-o", output_filename],
         status,
     )
 
-    keystore = "tsto-release.keystore"
-    alias = "tsto"
-    storepass = "tstotsto"
-    if not os.path.isfile(keystore):
-        status("Creating signing keystore...")
-        run_streamed(
-            [
-                java_tool("keytool"), "-genkeypair", "-noprompt",
-                "-keystore", keystore, "-alias", alias,
-                "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
-                "-storepass", storepass, "-keypass", storepass,
-                "-dname", "CN=TSTO, OU=TSTO, O=TSTO, L=NA, ST=NA, C=NA",
-            ],
-            status,
-        )
-
-    status("Signing APK...")
+    # zipalign + v1/v2/v3 sign with a built-in debug key, in place.
+    status("Zipaligning and signing APK (v1/v2/v3)...")
     run_streamed(
         [
-            java_tool("jarsigner"),
-            "-keystore", keystore,
-            "-storepass", storepass, "-keypass", storepass,
-            "-sigalg", "SHA256withRSA", "-digestalg", "SHA-256",
-            output_filename, alias,
+            "java", "-jar", UBER_SIGNER_JAR,
+            "--apks", output_filename,
+            "--overwrite",
+            "--allowResign",
         ],
         status,
     )
