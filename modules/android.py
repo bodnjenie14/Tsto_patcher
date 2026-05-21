@@ -6,7 +6,7 @@ import requests
 from pathlib import Path
 from tkinter import  messagebox
 from modules.misc import expand_url, safe_rmtree
-from modules.icon import replace_android_icons
+from modules.icon import replace_android_icons, sanitize_png_resources
 
 def check_dependencies():
     """Check if all required dependencies are installed."""
@@ -388,6 +388,11 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appna
         if icon_path:
             status("Replacing app icon...")
             replace_android_icons("./tappedout", icon_path)
+
+        # 4c) Repair any resources that are named *.png but aren't real PNGs
+        # (EA ships some assets as PSD files) - aapt2 would fail to compile them.
+        status("Sanitizing PNG resources...")
+        sanitize_png_resources("./tappedout")
 
         # 5) Recompile the patched APK
         status("Step 5/5: Rebuilding and signing APK (apktool)... this is the slow part, please wait.")

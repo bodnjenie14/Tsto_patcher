@@ -78,6 +78,44 @@ def replace_android_icons(decompiled_path, source_path):
     print(f"Replaced {replaced} Android launcher icons.")
 
 
+def sanitize_png_resources(decompiled_path):
+    """Convert any resource named *.png that isn't actually a PNG into a real
+    PNG. EA ships some assets (e.g. icon_pushnotification_custom.png) as Adobe
+    PSD files with a .png extension; aapt2 refuses to compile those and the
+    `apktool b` step fails before signing ever runs."""
+    res_dir = Path(decompiled_path, "res")
+    if not res_dir.is_dir():
+        return
+
+    fixed = 0
+    for root, _, files in os.walk(res_dir):
+        for file in files:
+            if not file.lower().endswith(".png"):
+                continue
+            file_path = Path(root, file)
+            with open(file_path, "rb") as f:
+                header = f.read(8)
+            if header == b"\x89PNG\r\n\x1a\n":
+                continue
+
+            if not PIL_AVAILABLE:
+                print(
+                    f"[WARNING] {file_path} is not a real PNG and Pillow is "
+                    f"unavailable to convert it; apktool build may fail."
+                )
+                continue
+            try:
+                with Image.open(file_path) as bad:
+                    bad.convert("RGBA").save(file_path, "PNG")
+                fixed += 1
+                print(f"Converted non-PNG resource to PNG: {file_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not convert {file_path}: {e}")
+
+    if fixed:
+        print(f"Sanitized {fixed} non-PNG resource file(s).")
+
+
 def replace_ios_icons(app_folder, source_path):
     if not PIL_AVAILABLE:
         raise RuntimeError(
