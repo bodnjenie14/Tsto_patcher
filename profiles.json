@@ -1,15 +1,27 @@
 {
   "profiles": {
     "Bods": {
-      "gameserver": "http://192.168.0.162:8080",
-      "dlc": "http://192.168.0.162:8080/static",
+      "apk": "C:\\Users\\bodwo\\Source Code\\Tsto_patcher\\Original Files\\tsto_original.apk",
+      "gameserver": "http://192.168.0.162:80",
+      "dlc": "http://192.168.0.162:80/static",
       "appname": "Bods Tapped Out",
       "version": "4.70.0",
       "icon": "C:/Users/bodwo/Source Code/Tsto_patcher/img/bods.jpg"
     },
     "Beta": {
       "gameserver": "https://test.pjtsto.com/",
-      "dlc": "https://cdn.projectspringfield.com/static/"
+      "dlc": "https://cdn.projectspringfield.com/static/",
+      "appname": "Test Project Springfield",
+      "version": "4.70.0",
+      "icon": "C:/Users/bodwo/Source Code/Tsto_patcher/img/beta.jpg"
+    },
+    "4.25": {
+      "apk": "C:/Users/bodwo/Source Code/Tsto_patcher/Original Files/TSTO_4.25.0.apk",
+      "gameserver": "http://192.168.0.162:8080",
+      "dlc": "http://192.168.0.162:8080/static",
+      "appname": "FOURTWENTYFIVE",
+      "version": "4.25.0",
+      "icon": "C:/Users/bodwo/Source Code/Tsto_patcher/img/simpsons_PNG70.png"
     }
   }
 }

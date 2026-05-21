@@ -148,6 +148,10 @@ def add_profile_selector(parent, root, entries):
             )
             return
 
+        # Reload from disk so a save in one tab doesn't clobber a profile
+        # that was saved in the other tab since this tab loaded.
+        profiles.clear()
+        profiles.update(load_profiles())
         profiles[name] = prof
         save_profiles(profiles)
         profile_combo["values"] = list(profiles.keys())
@@ -366,6 +370,18 @@ def start_apk_patcher():
     gameserver_entry.grid(row=1, column=1, columnspan=2, pady=5)
     add_placeholder(gameserver_entry, "http://192.168.1.100:8080")
 
+    # Older apps (~4.25.x) hardcode their auth host inside the app binary,
+    # in a fixed-size string slot. The redirect is written in place, so the
+    # gameserver URL must be no longer than the shortest slot (23 chars).
+    ttk.Label(
+        frame,
+        text=("Older apps (4.25.x): keep this URL ≤ 23 chars\n"
+              "e.g. http://192.168.0.5:80 — the auth host baked\n"
+              "into the app binary is a fixed-size slot it must fit."),
+        foreground="#A9A9A9",
+        justify="left",
+    ).grid(row=1, column=3, rowspan=2, sticky="w", padx=8)
+
     dlcserver_label = ttk.Label(frame, text="New DLC Server URL:")
     dlcserver_label.grid(row=2, column=0, sticky="w")
 
@@ -411,6 +427,7 @@ def start_apk_patcher():
         frame,
         root,
         {
+            "apk": apk_entry,
             "gameserver": gameserver_entry,
             "dlc": dlcserver_entry,
             "appname": appname_entry,
@@ -512,6 +529,18 @@ def start_ipa_patcher():
     gameserver_entry.grid(row=1, column=1, columnspan=2, pady=5)
     add_placeholder(gameserver_entry, "http://192.168.1.100:8080")
 
+    # Older apps (~4.25.x) hardcode their auth host inside the app binary,
+    # in a fixed-size string slot. The redirect is written in place, so the
+    # gameserver URL must be no longer than the shortest slot (23 chars).
+    ttk.Label(
+        frame,
+        text=("Older apps (4.25.x): keep this URL ≤ 23 chars\n"
+              "e.g. http://192.168.0.5:80 — the auth host baked\n"
+              "into the app binary is a fixed-size slot it must fit."),
+        foreground="#A9A9A9",
+        justify="left",
+    ).grid(row=1, column=3, rowspan=2, sticky="w", padx=8)
+
     dlcserver_label = ttk.Label(frame, text="New DLC Server URL:")
     dlcserver_label.grid(row=2, column=0, sticky="w")
 
@@ -564,6 +593,7 @@ def start_ipa_patcher():
         frame,
         root,
         {
+            "ipa": ipa_entry,
             "gameserver": gameserver_entry,
             "dlc": dlcserver_entry,
             "bundleid": bundleid_entry,
