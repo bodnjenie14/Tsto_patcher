@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import shutil
 import subprocess
@@ -151,7 +152,6 @@ def replace_and_log_urls(
     replacements = {
         "https://prod.simpsons-ea.com": new_gameserver_url,
         "https://syn-dir.sn.eamobile.com": new_gameserver_url,  # Director uses same as gameserver.
-        "https://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/": new_dlcserver_url,  # Update dlc server url.
         "https://ping1.tnt-ea.com": new_gameserver_url,
         "https://www.google.com": new_gameserver_url,
         "com.ea.game.simpsons4_row": f"com.ea.game.simpsons4_row.{new_appname.replace(' ', '_')}",
@@ -160,6 +160,15 @@ def replace_and_log_urls(
         "Springfield</string>": new_appname + "</string>",
         "4.69.5": new_version
     }
+
+    # The DLC CDN host is version-specific (4.25 uses jan2017-4-25-0-ztk6mia7,
+    # 4.69 uses oct2018-4-35-0-uam5h44a, etc.), so match ANY tstodlc host
+    # rather than one hard-coded string. Captures http(s) and the full
+    # "/netstorage/gameasset/direct/simpsons/" base path.
+    dlc_url_pattern = re.compile(
+        r"https?://[A-Za-z0-9.-]+\.tstodlc\.eamobile\.com"
+        r"/netstorage/gameasset/direct/simpsons/"
+    )
 
     log = []  # Store logs of replacements
 
@@ -184,6 +193,16 @@ def replace_and_log_urls(
                         )
                         content = content.replace(original, replacement)
                         modified = True
+
+                # DLC CDN host (regex - any version's tstodlc subdomain).
+                dlc_hit = dlc_url_pattern.search(content)
+                if dlc_hit:
+                    log.append(
+                        f"Replaced DLC URL '{dlc_hit.group(0)}' with "
+                        f"'{new_dlcserver_url}' in {file_path}"
+                    )
+                    content = dlc_url_pattern.sub(new_dlcserver_url, content)
+                    modified = True
 
                 if modified:
                     try:
@@ -213,7 +232,9 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     offset = file_bytes.find(original_bytes)
     if offset < 0:
         print("[!] Could not find the DLC URL in this file. Skipping patch.")
-        return file_bytes
+        # Return None (not the unchanged bytes) so the caller can tell the
+        # patch failed and must NOT proceed to write version-specific offsets.
+        return None
 
     # The original URL length (often 88 bytes)
     original_len = len(original_bytes)
@@ -253,11 +274,184 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
     return file_bytes
 
 
-def perform_binary_patching(decompiled_path, new_dlcserver_url):
+# IndexFileSig signature-check bypass patches, keyed by game version.
+#
+# Each offset is reverse-engineered against one specific libscorpio.so build.
+# They are NOT portable: writing these bytes into a different version's
+# library overwrites unrelated code and the app will crash on launch
+# ("won't open"). Only apply a set when the APK's version matches a key
+# here. Thanks to SpAnser for the original 4.69.x offsets.
+SIG_BYPASS_PATCHES = {
+    "4.69.5": {
+        "lib/armeabi-v7a/libscorpio-neon.so": (4666332, b"\xca\xfd\xff\xea"),  # 0x4733dc
+        "lib/armeabi-v7a/libscorpio.so": (4663220, b"\xd2\xfd\xff\xea"),       # 0x4727b4
+        "lib/arm64-v8a/libscorpio-neon.so": (7519612, b"\x9f\x00\x00\x14"),    # 0x72bd7c
+        "lib/arm64-v8a/libscorpio.so": (7519464, b"\x9f\x00\x00\x14"),         # 0x72bce8
+    },
+}
+
+
+def detect_apk_version(decompiled_path):
+    """Read versionName from the apktool.yml produced by decompilation.
+
+    Returns the raw version string (e.g. '4.69.5.1234') or None if it
+    cannot be determined.
     """
-    Perform direct binary patching on the .so files by overwriting the DLC URL.
-    This approach does NOT rely on radare2. It locates the known original
-    DLC string and replaces it with the user-provided new_dlcserver_url.
+    yml_path = os.path.join(decompiled_path, "apktool.yml")
+    if not os.path.isfile(yml_path):
+        return None
+    try:
+        with open(yml_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped.startswith("versionName:"):
+                    return stripped.split(":", 1)[1].strip().strip("'\"")
+    except OSError as e:
+        print(f"[WARN] Could not read apktool.yml: {e}")
+    return None
+
+
+def lookup_sig_bypass(version):
+    """Return the bypass-patch table for the detected version, or None.
+
+    Matches by prefix so build suffixes (e.g. '4.69.5.1234') still resolve
+    to the '4.69.5' entry.
+    """
+    if not version:
+        return None
+    for key, patches in SIG_BYPASS_PATCHES.items():
+        if version == key or version.startswith(key + "."):
+            return patches
+    return None
+
+
+def apply_sig_bypass(file_path, rel_path, offset, expected_len, patch_bytes):
+    """Write the IndexFileSig bypass bytes at a fixed offset, safely.
+
+    Refuses to write if the offset would fall outside the file, which
+    would corrupt the library."""
+    file_size = os.path.getsize(file_path)
+    if offset + len(patch_bytes) > file_size:
+        print(
+            f"[WARNING] Bypass offset {offset} is past the end of {rel_path} "
+            f"({file_size} bytes). Skipping to avoid corruption."
+        )
+        return
+    with open(file_path, "r+b") as f:
+        f.seek(offset)
+        f.write(patch_bytes)
+    print(f"[SUCCESS] Bypassed IndexFileSig in {rel_path}.")
+
+
+# Signature-based DLC signature-check bypass.
+#
+# Unlike SIG_BYPASS_PATCHES (fixed offsets, version-locked), each recipe here
+# locates a code pattern by content, so it works regardless of where the code
+# sits in the file - portable across .so variants and minor version changes.
+# A recipe is only applied when it matches EXACTLY ONCE and the bytes at the
+# patch site equal `expect`, so it can never corrupt an unrelated build.
+#
+# 4.25.x recipe - dlcpk::PackageSignatureIsValid (ARM). Its epilogue is:
+#   LDR R2,[SP,#0x34]; MOV R0,R4; LDR R3,[R6]; CMP R2,R3;
+#   BNE <stack_chk_fail>; ADD SP,SP,#0x3C; POP {R4-R11,PC}
+# The function returns R4 (1 only if DSA_verify succeeded). Rewriting
+# `MOV R0,R4` -> `MOV R0,#1` makes it always report the signature as valid.
+# The BNE branch bytes are address-relative, so they are wildcarded.
+SIG_BYPASS_RECIPES = [
+    {
+        "name": "dlcpk::PackageSignatureIsValid -> always valid (TSTO 4.25.x)",
+        "pattern": re.compile(
+            b"\x34\x20\x9d\xe5\x04\x00\xa0\xe1\x00\x30\x96\xe5\x03\x00\x52\xe1"
+            b"..."  # BNE branch offset (address-relative) - wildcard
+            b"\x1a\x3c\xd0\x8d\xe2\xf0\x8f\xbd\xe8",
+            re.DOTALL,
+        ),
+        "patch_at": 4,                    # MOV R0,R4 within the match
+        "expect": b"\x04\x00\xa0\xe1",     # MOV R0, R4
+        "replace": b"\x01\x00\xa0\xe3",    # MOV R0, #1
+    },
+]
+
+
+def apply_sig_bypass_recipes(data, rel_path):
+    """Apply every matching signature-bypass recipe to `data` (a bytearray).
+
+    Returns True if any recipe was applied. A recipe is skipped (with a
+    message) unless it matches exactly once and the patch site holds the
+    expected original bytes - this is what makes it safe on any build.
+    """
+    changed = False
+    for recipe in SIG_BYPASS_RECIPES:
+        hits = [m.start() for m in recipe["pattern"].finditer(bytes(data))]
+        if not hits:
+            continue
+        if len(hits) > 1:
+            print(
+                f"[WARNING] Recipe '{recipe['name']}' matched {len(hits)} "
+                f"times in {rel_path}; skipping (ambiguous)."
+            )
+            continue
+        site = hits[0] + recipe["patch_at"]
+        current = bytes(data[site:site + len(recipe["expect"])])
+        if current != recipe["expect"]:
+            print(
+                f"[WARNING] Recipe '{recipe['name']}' site in {rel_path} "
+                f"holds {current.hex()}, expected {recipe['expect'].hex()}; "
+                f"skipping (already patched or wrong build)."
+            )
+            continue
+        data[site:site + len(recipe["replace"])] = recipe["replace"]
+        changed = True
+        print(
+            f"[SUCCESS] Applied '{recipe['name']}' in {rel_path} "
+            f"at offset {hex(site)}."
+        )
+    return changed
+
+
+# 4.25-era TNT auth hosts baked into libscorpio.so. A pre-Nucleus (~4.25)
+# client runs its whole login handshake against these EA hosts; redirecting
+# them to the private gameserver is what lets such clients authenticate.
+TNT_AUTH_HOSTS = (b"https://auth.tnt-ea.com", b"https://nucleus.tnt-ea.com")
+
+
+def patch_tnt_hosts(file_bytes, new_gameserver_url):
+    """Redirect the hardcoded TNT auth hosts in a .so to the gameserver URL.
+
+    Patched in place: the replacement is written over the original string and
+    the rest of the slot NUL-filled. The slot cannot grow, so a gameserver URL
+    longer than the original host string is reported and skipped rather than
+    corrupting the binary (e.g. 'https://auth.tnt-ea.com' is only 23 bytes -
+    needs a server URL that short, such as http://<ip>:80).
+    """
+    repl = new_gameserver_url.rstrip("/").encode("utf-8")
+    changed = False
+    for host in TNT_AUTH_HOSTS:
+        offset = file_bytes.find(host)
+        if offset < 0:
+            continue
+        if len(repl) > len(host):
+            print(
+                f"[WARNING] Cannot redirect {host.decode()}: gameserver URL "
+                f"'{new_gameserver_url}' is {len(repl) - len(host)} byte(s) too "
+                f"long for its {len(host)}-byte slot. Use a shorter server URL "
+                f"(run the gameserver on port 80 so the URL fits)."
+            )
+            continue
+        for i in range(len(host)):
+            file_bytes[offset + i] = repl[i] if i < len(repl) else 0
+        changed = True
+        print(f"[SUCCESS] Redirected {host.decode()} -> {new_gameserver_url}")
+    return changed
+
+
+def perform_binary_patching(decompiled_path, new_dlcserver_url, new_gameserver_url):
+    """
+    Perform direct binary patching on the .so files: overwrite the DLC URL,
+    redirect the TNT auth hosts to the gameserver, apply version-locked
+    IndexFileSig offsets when the version is known, and apply content-located
+    signature-bypass recipes (version-independent). Unknown builds are left
+    unpatched rather than corrupted.
     """
 
     # List out all the known scorpio .so variants
@@ -267,6 +461,15 @@ def perform_binary_patching(decompiled_path, new_dlcserver_url):
         "lib/arm64-v8a/libscorpio.so",
         "lib/arm64-v8a/libscorpio-neon.so",
     ]
+
+    version = detect_apk_version(decompiled_path)
+    bypass_table = lookup_sig_bypass(version)
+    if bypass_table is None:
+        print(
+            f"[INFO] APK version '{version}' has no version-locked "
+            f"IndexFileSig offsets; relying on the content-located "
+            f"signature-bypass recipes instead."
+        )
 
     for rel_path in so_files:
         file_path = os.path.join(decompiled_path, rel_path)
@@ -279,39 +482,41 @@ def perform_binary_patching(decompiled_path, new_dlcserver_url):
         try:
             with open(file_path, "rb") as src:
                 data = bytearray(src.read())
+            modified = False
 
-            patched_data = patch_url(data, new_dlcserver_url)
-            if patched_data:
-                with open(file_path, "wb") as dst:
-                    dst.write(patched_data)
-                    print(f"[SUCCESS] Patched {rel_path}.")
-
-                    # Patch to bypass IndexFileSig. Thanks to SpAnser!
-                    if "lib/armeabi-v7a/libscorpio-neon.so" in rel_path:
-                        print(
-                            "Bypass IndexFileSig in lib/armeabi-v7a/libscorpio-neon.so"
-                        )
-                        dst.seek(4666332)  # 0x4733dc offset
-                        dst.write(b"\xca\xfd\xff\xea")  # bypass sig check
-
-                    elif "lib/armeabi-v7a/libscorpio.so" in rel_path:
-                        print("Bypass IndexFileSig in lib/armeabi-v7a/libscorpio.so")
-                        dst.seek(4663220)  # 0x4727b4 offset
-                        dst.write(b"\xd2\xfd\xff\xea")  # bypass sig check
-
-                    elif "lib/arm64-v8a/libscorpio-neon.so" in rel_path:
-                        print("Bypass IndexFileSig in lib/arm64-v8a/libscorpio-neon.so")
-                        dst.seek(7519612)  # 0x72bd7c offset
-                        dst.write(b"\x9f\x00\x00\x14")  # bypass sig check
-
-                    elif "lib/arm64-v8a/libscorpio.so" in rel_path:
-                        print("Bypass IndexFileSig in lib/arm64-v8a/libscorpio.so")
-                        dst.seek(7519464)  # 0x72bce8 offset
-                        dst.write(b"\x9f\x00\x00\x14")  # bypass sig check
-
+            # 1) DLC URL string patch. patch_url() mutates `data` in place
+            #    and returns it when the string is found, else None.
+            if patch_url(data, new_dlcserver_url) is not None:
+                modified = True
+                print(f"[SUCCESS] Patched DLC URL in {rel_path}.")
             else:
                 print(
-                    f"[WARNING] Could not patch {rel_path}. The original DLC string was not found."
+                    f"[INFO] DLC string not found in {rel_path}; left "
+                    f"unchanged (normal for versions whose DLC URL is "
+                    f"server-supplied, e.g. 4.25.x)."
+                )
+
+            # 2) Signature-check bypass via content-located recipes
+            #    (version-independent, safe on any build).
+            if apply_sig_bypass_recipes(data, rel_path):
+                modified = True
+
+            # 2b) Redirect 4.25-era TNT auth hosts to the gameserver so
+            #     pre-Nucleus clients can complete their login handshake.
+            if patch_tnt_hosts(data, new_gameserver_url):
+                modified = True
+
+            # 3) Write back the changes from steps 1-2 in one pass.
+            if modified:
+                with open(file_path, "wb") as dst:
+                    dst.write(data)
+
+            # 4) IndexFileSig bypass via version-locked offsets, for builds
+            #    covered by SIG_BYPASS_PATCHES (e.g. 4.69.x).
+            if bypass_table and rel_path in bypass_table:
+                offset, patch_bytes = bypass_table[rel_path]
+                apply_sig_bypass(
+                    file_path, rel_path, offset, len(patch_bytes), patch_bytes
                 )
 
         except Exception as e:
@@ -381,8 +586,8 @@ def process_apk(input_filename, new_gameserver_url, new_dlcserver_url, new_appna
         )
 
         # 4) Perform direct binary patching on .so files for the DLC URL
-        status("Step 4/5: Binary-patching .so libraries (DLC URL + signature bypass)...")
-        perform_binary_patching("./tappedout", new_dlcserver_url)
+        status("Step 4/5: Binary-patching .so libraries (DLC URL + TNT auth + signature bypass)...")
+        perform_binary_patching("./tappedout", new_dlcserver_url, new_gameserver_url)
 
         # 4b) Replace the app icon if the user supplied one.
         if icon_path:

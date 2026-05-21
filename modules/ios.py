@@ -143,30 +143,52 @@ def run_ipa_script(ipa_file, server_url, dlc_url, bundle_id, appname, version, i
         print(f"New MayhemServerURL: {new_server_url}")
         print(f"New DLCLocation: {dlc_url}")
 
-        # Edit the binary file
+        # Edit the binary file. auth.tnt-ea.com / nucleus.tnt-ea.com are the
+        # pre-Nucleus (~4.25) auth hosts - redirecting them to the gameserver
+        # is what lets old iOS clients log in (parity with the Android patch).
         old_urls = [
             "http://oct2018-4-35-0-uam5h44a.tstodlc.eamobile.com/netstorage/gameasset/direct/simpsons/",
             "https://syn-dir.sn.eamobile.com",
             "https://ping1.tnt-ea.com",
+            "https://auth.tnt-ea.com",
+            "https://nucleus.tnt-ea.com",
         ]
-        new_urls = [new_dlc_url, new_server_url, "https://google.com"]
+        new_urls = [
+            new_dlc_url,
+            new_server_url,
+            "https://google.com",
+            new_server_url,
+            new_server_url,
+        ]
 
         status("Step 3/4: Binary-patching the app (URLs + signature bypass)...")
         with open(binary_path, "rb") as file:
             content = bytearray(file.read())
 
-        # Replace URLs in the binary
+        # Replace URLs in the binary. This is an in-place patch, so the
+        # replacement must be NO LONGER than the original slot - a longer
+        # string would shift the Mach-O and corrupt it. The shortest slot
+        # here is 'https://auth.tnt-ea.com' (23 chars), so for older apps the
+        # gameserver URL must be <= 23 chars (e.g. http://192.168.0.5:80).
         for old_url, new_url in zip(old_urls, new_urls):
-            old_length = len(old_url)
-            new_length = len(new_url)
+            old_url_bytes = old_url.encode()
+            if old_url_bytes not in content:
+                continue
 
+            old_length = len(old_url)
             new_url = expand_url(new_url, old_length)
 
-            # Encode and replace
-            old_url_bytes = old_url.encode()
-            new_url_bytes = new_url.encode()
+            if len(new_url) > old_length:
+                print(
+                    f"[WARNING] Cannot redirect {old_url}: '{new_url}' is "
+                    f"{len(new_url) - old_length} byte(s) too long for its "
+                    f"{old_length}-byte slot. Use a shorter gameserver URL "
+                    f"(<= {old_length} chars, e.g. server on port 80)."
+                )
+                continue
 
-            content = content.replace(old_url_bytes, new_url_bytes)
+            content = content.replace(old_url_bytes, new_url.encode())
+            print(f"[SUCCESS] Redirected {old_url} -> {new_url}")
 
         # Save edited binary
         with open(binary_path, "wb") as file:
