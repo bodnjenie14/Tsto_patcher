@@ -281,13 +281,19 @@ def patch_url(file_bytes: bytearray, new_url: str) -> bytearray:
 # library overwrites unrelated code and the app will crash on launch
 # ("won't open"). Only apply a set when the APK's version matches a key
 # here. Thanks to SpAnser for the original 4.69.x offsets.
+# IndexFileSig offsets reverse-engineered against the 4.69.5 libscorpio
+# builds. The 4.70.0 release ships the same native libraries (versionCode
+# 695), so it reuses the identical offsets - this is what the patcher applied
+# unconditionally before the bypass was version-gated, and 4.70.0 worked.
+_SIG_BYPASS_469 = {
+    "lib/armeabi-v7a/libscorpio-neon.so": (4666332, b"\xca\xfd\xff\xea"),  # 0x4733dc
+    "lib/armeabi-v7a/libscorpio.so": (4663220, b"\xd2\xfd\xff\xea"),       # 0x4727b4
+    "lib/arm64-v8a/libscorpio-neon.so": (7519612, b"\x9f\x00\x00\x14"),    # 0x72bd7c
+    "lib/arm64-v8a/libscorpio.so": (7519464, b"\x9f\x00\x00\x14"),         # 0x72bce8
+}
 SIG_BYPASS_PATCHES = {
-    "4.69.5": {
-        "lib/armeabi-v7a/libscorpio-neon.so": (4666332, b"\xca\xfd\xff\xea"),  # 0x4733dc
-        "lib/armeabi-v7a/libscorpio.so": (4663220, b"\xd2\xfd\xff\xea"),       # 0x4727b4
-        "lib/arm64-v8a/libscorpio-neon.so": (7519612, b"\x9f\x00\x00\x14"),    # 0x72bd7c
-        "lib/arm64-v8a/libscorpio.so": (7519464, b"\x9f\x00\x00\x14"),         # 0x72bce8
-    },
+    "4.69.5": _SIG_BYPASS_469,
+    "4.70.0": _SIG_BYPASS_469,
 }
 
 
